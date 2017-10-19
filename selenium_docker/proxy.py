@@ -11,6 +11,7 @@ from docker import DockerClient
 from docker.models.containers import Container
 from selenium.webdriver.common.proxy import Proxy, ProxyType
 
+from selenium_docker.base import ContainerFactory, check_container
 from selenium_docker.utils import ip_port, gen_uuid, ref_counter
 
 
@@ -34,29 +35,30 @@ class SquidProxy(AbstractProxy):
             'Name': 'on-failure'
         })
 
-    def __init__(self, docker_=None, logger=None):
+    def __init__(self, logger=None, factory=None):
         self.name = 'squid3-' + gen_uuid()
         self.logger = logger or logging.getLogger(
             '%s.SquidProxy.%s' % (__name__, self.name))
-        self._docker = docker_ or docker.from_env()
-        self.container = self._make_container(docker_)
+        self.factory = factory or ContainerFactory.get_default_factory()
+        self.factory.load_image(self.CONTAINER, background=False)
+        self.container = self._make_container()
         conn, port = ip_port(self.container, self.SQUID_PORT)
         self.selenium_proxy = self.make_proxy(conn, port)
 
     @ref_counter('squid-container', +1)
-    def _make_container(self, docker_):
+    @check_container
+    def _make_container(self):
         # type: (DockerClient) -> Container
         kwargs = dict(self.CONTAINER)
         kwargs.setdefault('name', self.name)
-        c = docker_.containers.run(**kwargs)
+        self.logger.debug('creating container')
+        c = self.factory.start_container(kwargs)
         c.reload()
         return c
 
     @ref_counter('squid-container', -1)
     def close_container(self):
-        self.logger.debug('closing and removing container')
-        self.container.stop()
-        self.container.remove()
+        self.factory.stop_container(name=self.name)
 
     @staticmethod
     def make_proxy(http, port=None):

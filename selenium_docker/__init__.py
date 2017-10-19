@@ -5,7 +5,7 @@
 # <<
 
 __author__ = 'Blake VandeMerwe'
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 __license__ = 'MIT'
 __contact__ = 'blake.vandemerwe@vivint.com'
 __url__ = 'https://source.vivint.com/projects/DEVOPS/repos/vivint-selenium-docker'
@@ -15,9 +15,12 @@ from selenium_docker.drivers import (
     DockerDriver,
     FirefoxDriver
 )
+from selenium_docker.proxy import SquidProxy
+
 
 __all__ = [
     'ChromeDriver',
     'DockerDriver',
     'FirefoxDriver',
+    'SquidProxy'
 ]
