@@ -29,7 +29,7 @@ def check_container(fn):
         self.logger.debug('checking container before creation')
         if self.factory is None:
             raise DockerException('no docker client defined as factory')
-        if self.container is not None:
+        if getattr(self, 'container', None) is not None:
             raise DockerException(
                 'container already exists for this driver instance (%s)' %
                 self.container.name)
@@ -38,7 +38,7 @@ def check_container(fn):
             raise DockerException('cannot create container without definition')
         # check the docker connection
         try:
-            self.factory.ping()
+            self.factory.docker.ping()
         except APIError as e:
             self.logger.exception(e, exc_info=True)
             raise e
@@ -94,7 +94,7 @@ class ContainerFactory(object):
 
     def _gen_name(self, key=None):
         # type: (str) -> str
-        return 'council-%s-%s' % (self._ns, key or gen_uuid(6))
+        return 'selenium-%s-%s' % (self._ns, key or gen_uuid(6))
 
     def as_json(self):
         # type: () -> dict
@@ -145,7 +145,7 @@ class ContainerFactory(object):
 
         self.logger.debug('starting container')
 
-        name = kwargs.get('name', self._gen_name())
+        name = spec.get('name', kwargs.get('name', self._gen_name()))
 
         kw = dict(spec)
         kw.update(kwargs)
