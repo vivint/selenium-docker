@@ -2,7 +2,6 @@
 .tox
 .testrepository
 doc/build
-skratch.py
 scratch*.*
 
 # Byte-compiled / optimized / DLL files
