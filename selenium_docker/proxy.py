@@ -17,19 +17,9 @@ from selenium_docker.utils import ip_port, gen_uuid, ref_counter
 class AbstractProxy(object):
     @staticmethod
     def make_proxy(http, port=None):
-        """ Creates a Proxy instance to be used with Selenium drivers.
-
-            Args:
-                http (str):
-                port (int):
-
-            Returns:
-                Proxy
-        """
-        proxy = Proxy()
-        proxy.proxy_type = ProxyType.MANUAL
-        proxy.http_proxy = '%s:%d' % (http, port)
-        return proxy
+        # type: (str, int) -> Proxy
+        """ Creates a Proxy instance to be used with Selenium drivers. """
+        raise NotImplementedError('abstract method must be implemented')
 
 
 class SquidProxy(AbstractProxy):
@@ -68,3 +58,9 @@ class SquidProxy(AbstractProxy):
         self.container.stop()
         self.container.remove()
 
+    @staticmethod
+    def make_proxy(http, port=None):
+        proxy = Proxy()
+        proxy.proxy_type = ProxyType.MANUAL
+        proxy.http_proxy = '%s:%d' % (http, port)
+        return proxy

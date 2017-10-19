@@ -4,12 +4,14 @@
 #     vivint-selenium-docker, 2017
 # <<
 
-from selenium_docker.base import DockerDriver
-from selenium_docker.drivers import ChromeDocker, FirefoxDocker
-
+from selenium_docker.drivers import (
+    ChromeDriver,
+    DockerDriver,
+    FirefoxDriver
+)
 
 __all__ = [
-    'ChromeDocker',
+    'ChromeDriver',
     'DockerDriver',
-    'FirefoxDocker',
+    'FirefoxDriver',
 ]
