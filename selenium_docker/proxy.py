@@ -45,6 +45,11 @@ class SquidProxy(AbstractProxy):
         conn, port = ip_port(self.container, self.SQUID_PORT)
         self.selenium_proxy = self.make_proxy(conn, port)
 
+    def quit(self):
+        """ Alias method for closing the container. """
+        self.logger.debug('proxy quit')
+        self.close_container()
+
     @ref_counter('squid-container', +1)
     @check_container
     def _make_container(self):
