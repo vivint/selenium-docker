@@ -46,19 +46,6 @@ class ChromeDocker(DockerDriver):
         return None
 
 
-# class ChromeHubNodeDocker(HubDriver, ChromeDocker):
-#     def __init__(self, *args, **kwargs):
-#         self._hub = kwargs.pop('hub')
-#         self._link_name = getattr(self._hub, '_name', self._hub)
-#         self.CONTAINER = ChromeDocker.CONTAINER.copy()
-#         self.CONTAINER.update(dict(
-#             image='selenium/node-chrome',
-#             labels={'browser': 'chrome', 'hub': 'true'},
-#             links={self._link_name: 'hub'}
-#         ))
-#         super(ChromeHubNodeDocker, self).__init__(*args, **kwargs)
-
-
 class FirefoxDocker(DockerDriver):
     BROWSER = 'Firefox'
     CONTAINER = dict(
@@ -91,16 +78,3 @@ class FirefoxDocker(DockerDriver):
         if user_agent:
             profile.set_preference('general.useragent.override', user_agent)
         return profile
-
-
-# class FirefoxHubNodeDocker(HubDriver, FirefoxDocker):
-#     def __init__(self, *args, **kwargs):
-#         self._hub = kwargs.pop('hub')
-#         self._link_name = getattr(self._hub, '_name', self._hub)
-#         self.CONTAINER = FirefoxDocker.CONTAINER.copy()
-#         self.CONTAINER.update(dict(
-#             image='selenium/node-firefox',
-#             labels={'browser': 'firefox', 'hub': 'true'},
-#             links={self._link_name: 'hub'}
-#         ))
-#         super(FirefoxHubNodeDocker, self).__init__(*args, **kwargs)
