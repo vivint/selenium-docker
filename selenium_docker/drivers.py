@@ -17,10 +17,8 @@ from selenium.webdriver import Remote
 from selenium.webdriver import (
     ChromeOptions, FirefoxProfile, DesiredCapabilities)
 
-from selenium_docker.base import ContainerFactory
+from selenium_docker.base import ContainerFactory, check_container
 from selenium_docker.utils import ip_port, gen_uuid, ref_counter
-
-_default_factory = ContainerFactory(None, None)
 
 
 class DockerDriverMeta(type):
@@ -68,8 +66,8 @@ class DockerDriver(Remote):
         ckwargs['name'] = self._name
 
         # create the container
-        self.factory = factory or _default_factory
-        self.factory.load_image(self.CONTAINER['image'], background=False)
+        self.factory = factory or ContainerFactory.get_default_factory()
+        self.factory.load_image(self.CONTAINER, background=False)
         self.container = self._make_container(**ckwargs)
         self._base_url = self._get_url()
         self._perform_check_container_ready()
@@ -167,6 +165,7 @@ class DockerDriver(Remote):
         return base_url
 
     @ref_counter('docker-container', +1)
+    @check_container
     def _make_container(self, **kwargs):
         """ Create a running container on the given Docker engine. This
             container will contain the Selenium runtime, and ideally a
@@ -179,13 +178,6 @@ class DockerDriver(Remote):
                 Container
         """
         # ensure we don't already have a container created for this instance
-        if hasattr(self, 'container') and \
-                getattr(self, 'container') is not None:
-            raise DockerException(
-                'container already exists for this driver instance (%s)' %
-                self.container.name)
-        if self.CONTAINER is None:
-            raise DockerException('cannot create container without definition')
         self.logger.debug('creating container')
         return self.factory.start_container(self.CONTAINER, **kwargs)
 

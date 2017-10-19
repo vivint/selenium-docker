@@ -6,17 +6,51 @@
 
 import time
 import logging
-from functools import partial
+from functools import partial, wraps
+from collections import Mapping
 
 import docker
 import gevent
-from docker.errors import DockerException
+from six import string_types
+from docker.errors import APIError, DockerException
 from docker.models.containers import Container
 
 from selenium_docker.utils import gen_uuid
 
 
+def check_container(fn):
+    """ Ensure we're not trying to double up an external container
+        with a Python instance that already has one. This would create
+        dangling containers that may not get stopped programmatically.
+    """
+    @wraps(fn)
+    def inner(self, *args, **kwargs):
+        # check the instance
+        self.logger.debug('checking container before creation')
+        if self.factory is None:
+            raise DockerException('no docker client defined as factory')
+        if self.container is not None:
+            raise DockerException(
+                'container already exists for this driver instance (%s)' %
+                self.container.name)
+        # check the specification
+        if self.CONTAINER is None:
+            raise DockerException('cannot create container without definition')
+        # check the docker connection
+        try:
+            self.factory.ping()
+        except APIError as e:
+            self.logger.exception(e, exc_info=True)
+            raise e
+        else:
+            self.logger.debug('checking passed')
+            return fn(self, *args, **kwargs)
+    return inner
+
+
 class ContainerFactory(object):
+    DEFAULT = None
+
     def __init__(self, engine, namespace, logger=None):
         self._containers = {}
         self._engine = engine or docker.from_env()
@@ -39,6 +73,12 @@ class ContainerFactory(object):
     @property
     def namespace(self):
         return self._ns
+
+    @classmethod
+    def get_default_factory(cls, logger=None):
+        if cls.DEFAULT is None:
+            cls.DEFAULT = cls(None, None, logger=logger)
+        return cls.DEFAULT
 
     def __bootstrap(self, container, **kwargs):
         # type: (Container, dict) -> Container
@@ -79,9 +119,15 @@ class ContainerFactory(object):
             Returns:
                 Image
         """
-        self.logger.debug('loading image, %s:%s', image, tag)
         if tag is None:
             tag = ''
+        if isinstance(image, Mapping):
+            image = image.get('image', None)
+        if not isinstance(image, string_types):
+            raise ValueError('cannot determine image from %s' % type(image))
+
+        self.logger.debug('loading image, %s:%s', image, tag or 'latest')
+
         fn = partial(self._engine.images.pull,
                      image,
                      tag=tag,
