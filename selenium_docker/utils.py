@@ -26,18 +26,25 @@ else:
 def gen_uuid(length=4):
     """ Generate a random ID.
 
-        Args:
-            length (int): length of generated ID.
+    Args:
+        length (int): length of generated ID.
 
-        Returns:
-            str
+    Returns:
+        str: of length ``length``.
     """
     return ''.join([random.choice(string.hexdigits) for _ in _range(length)])
 
 
 def in_container():
-    # type: () -> bool
-    """ Determines if we're running in an lxc/docker container. """
+    """ Determines if we're running in an lxc/docker container.
+
+    Checks in various locations with different methods. If any one of these
+    default operations are successful the function returns ``True``. This is
+    not an infallible method and can be faked easy.
+
+    Returns:
+        bool
+    """
     out = subprocess.check_output('cat /proc/1/sched', shell=True)
     out = out.decode('utf-8').lower()
     checks = [
@@ -53,14 +60,14 @@ def in_container():
 
 def ip_port(container, port):
     """ Returns an updated HostIp and HostPort from the container's
-        network properties. Calls container reload on-call.
+    network properties. Calls container reload on-call.
 
-        Args:
-            container (Container):
-            port (str):
+    Args:
+        container (Container):
+        port (str):
 
-        Returns:
-            (str, int)
+    Returns:
+        (str, int)
     """
     # make sure it's running, get the newest values
     port = str(port)
@@ -73,18 +80,18 @@ def ip_port(container, port):
 def load_docker_image(_docker, image, tag=None, insecure_registry=False,
                       background=False):
     """ Issue a `docker pull` command before attempting to start/run
-        containers. This could potentially alliviate startup time, as well
-        as ensure the containers are up-to-date.
+    containers. This could potentially alliviate startup time, as well
+    as ensure the containers are up-to-date.
 
-        Args:
-            _docker (DockerClient):
-            image (str):
-            tag (str):
-            insecure_registry (bool):
-            background (bool):
+    Args:
+        _docker (DockerClient):
+        image (str):
+        tag (str):
+        insecure_registry (bool):
+        background (bool):
 
-        Returns:
-            Image
+    Returns:
+        Image
     """
     if tag is None:
         tag = ''
@@ -99,8 +106,16 @@ def load_docker_image(_docker, image, tag=None, insecure_registry=False,
 
 
 def memoize(key):
-    """ Simple function caching. """
+    """ Simple function caching.
+
+    Args:
+        key (str):
+
+    Returns:
+        Callable
+    """
     memo = {}
+
     def inner(fn):
         @wraps(fn)
         def wrapped(*args):
@@ -116,13 +131,13 @@ def memoize(key):
 def ref_counter(key, direction, callback_fn=None):
     """ Counts the references for a given key.
 
-        Args:
-            key (str):
-            direction (int):
-            callback_fn (Callable):
+    Args:
+        key (str):
+        direction (int):
+        callback_fn (Callable):
 
-        Returns:
-            Callable
+    Returns:
+        Callable
     """
     def inner(fn):
         @wraps(fn)
@@ -143,7 +158,7 @@ def ref_counter(key, direction, callback_fn=None):
 def references():
     """ Read-only copy of the reference counter dictionary.
 
-        Returns:
-            dict
+    Returns:
+        dict
     """
     return dict(__references.items())
