@@ -6,7 +6,7 @@
 
 import time
 import logging
-from functools import partial
+from functools import partial, wraps
 from collections import Mapping
 
 import docker
@@ -18,15 +18,48 @@ from docker.models.containers import Container
 from selenium_docker.utils import gen_uuid
 
 
+def check_container(fn):
+    """ Ensure we're not trying to double up an external container
+        with a Python instance that already has one. This would create
+        dangling containers that may not get stopped programmatically.
+    """
+    @wraps(fn)
+    def inner(self, *args, **kwargs):
+        # check the instance
+        self.logger.debug('checking container before creation')
+        if self.factory is None:
+            raise DockerException('no docker client defined as factory')
+        if getattr(self, 'container', None) is not None:
+            raise DockerException(
+                'container already exists for this driver instance (%s)' %
+                self.container.name)
+        # check the specification
+        if self.CONTAINER is None:
+            raise DockerException('cannot create container without definition')
+        # check the docker connection
+        try:
+            self.factory.docker.ping()
+        except APIError as e:
+            self.logger.exception(e, exc_info=True)
+            raise e
+        else:
+            self.logger.debug('checking passed')
+            return fn(self, *args, **kwargs)
+    return inner
+
+
 class ContainerFactory(object):
     DEFAULT = None
 
-    def __init__(self, engine, namespace, logger=None):
+    def __init__(self, engine, namespace, make_default=True, logger=None):
         self._containers = {}
         self._engine = engine or docker.from_env()
         self._ns = namespace or gen_uuid(8)
         self.logger = logger or logging.getLogger(
             '%s.ContainerFactory.%s' % (__name__, self._ns))
+
+        if make_default and ContainerFactory.DEFAULT is None:
+            ContainerFactory.DEFAULT = self
 
     def __repr__(self):
         return '<ContainerFactory(docker=%s,ns=%s,count=%d)>' % (
@@ -47,7 +80,7 @@ class ContainerFactory(object):
     @classmethod
     def get_default_factory(cls, logger=None):
         if cls.DEFAULT is None:
-            cls.DEFAULT = cls(None, None, logger=logger)
+            cls(None, None, make_default=True, logger=logger)
         return cls.DEFAULT
 
     def __bootstrap(self, container, **kwargs):
