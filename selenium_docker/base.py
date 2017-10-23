@@ -6,46 +6,16 @@
 
 import time
 import logging
-from functools import partial, wraps
+from functools import partial
 from collections import Mapping
 
 import docker
 import gevent
 from six import string_types
-from docker.errors import APIError, DockerException
+from docker.errors import APIError, DockerException, NotFound
 from docker.models.containers import Container
 
 from selenium_docker.utils import gen_uuid
-
-
-def check_container(fn):
-    """ Ensure we're not trying to double up an external container
-        with a Python instance that already has one. This would create
-        dangling containers that may not get stopped programmatically.
-    """
-    @wraps(fn)
-    def inner(self, *args, **kwargs):
-        # check the instance
-        self.logger.debug('checking container before creation')
-        if self.factory is None:
-            raise DockerException('no docker client defined as factory')
-        if getattr(self, 'container', None) is not None:
-            raise DockerException(
-                'container already exists for this driver instance (%s)' %
-                self.container.name)
-        # check the specification
-        if self.CONTAINER is None:
-            raise DockerException('cannot create container without definition')
-        # check the docker connection
-        try:
-            self.factory.docker.ping()
-        except APIError as e:
-            self.logger.exception(e, exc_info=True)
-            raise e
-        else:
-            self.logger.debug('checking passed')
-            return fn(self, *args, **kwargs)
-    return inner
 
 
 class ContainerFactory(object):
@@ -128,7 +98,7 @@ class ContainerFactory(object):
 
         self.logger.debug('loading image, %s:%s', image, tag or 'latest')
 
-        fn = partial(self._engine.images.pull,
+        fn = partial(self.docker.images.pull,
                      image,
                      tag=tag,
                      insecure_registry=insecure_registry,
@@ -152,7 +122,7 @@ class ContainerFactory(object):
         kw['name'] = name
 
         try:
-            container = self._engine.containers.run(**kw)
+            container = self.docker.containers.run(**kw)
         except DockerException as e:
             self.logger.exception(e, exc_info=True)
             raise e
@@ -162,19 +132,53 @@ class ContainerFactory(object):
         self.logger.debug('started container %s', name)
         return container
 
-    def stop_container(self, name=None, key=None):
-        # type: (str, str) -> None
-        """ Remove an individual container by name or key."""
+    def stop_container(self, name=None, key=None, timeout=10):
+        """ Remove an individual container by name or key.
+
+        Args:
+            name (str): name of the container.
+            key (str): partial reference to the container. (Optional)
+            timeout (int): time in seconds to wait before sending ``SIGKILL``
+                to a running container.
+
+        Raises:
+            ValueError: when ``key`` and ``name`` are both None.
+            APIError: when there's a problem communicating with Docker engine.
+            NotFound: when no such container by ``name`` exists.
+
+        Returns:
+            None
+        """
+        e = None    # Exception
         if key and not name:
             name = self._gen_name(key=key)
         if not name:
             raise ValueError('`name` and `key` cannot both be None')
         if name not in self.containers:
-            raise KeyError('container %s it not being tracked' % name)
-        container = self.containers.pop(name)
+            self.logger.warning('container %s is not being tracked' % name)
+            # we're not tracking the container in our internal state
+            #  so we need to query the docker engine and see if it's there.
+            try:
+                container = self.docker.containers.get(name)
+            except (APIError, NotFound) as e:
+                self.logger.error('cannot find container via docker engine')
+                self.logger.exception(e, exc_info=True)
+                raise e
+        else:
+            container = self.containers.pop(name)
+        if e is not None:
+            # if we couldn't get a reference to the container through our
+            #  Factory instance alert that; it means we're leaking Container
+            #  references.
+            self.logger.info('container recovered from engine, not instance')
         self.logger.debug('stopping container %s', name)
-        container.stop()
-        container.remove()
+        try:
+            container.stop(timeout=timeout)
+            container.remove(force=True)
+        except APIError as e:
+            self.logger.error('could not stop container %s', container.name)
+            self.logger.exception(e, exc_info=True)
+            raise e
 
     def stop_all_containers(self):
         # type: () -> None
@@ -192,10 +196,11 @@ class ContainerFactory(object):
         labels = ['browser'] + list(set(labels))
         # now close all dangling containers
         for label in labels:
-            containers = self._engine.containers.list(
+            containers = self.docker.containers.list(
                 filters={'label': label})
-            self.logger.debug('found %d dangling containers with label %s',
-                              len(containers), label)
+            self.logger.debug(
+                'found %d dangling containers with label %s',
+                len(containers), label)
             for c in containers:
                 c.stop()
                 c.remove()
