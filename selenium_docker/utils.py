@@ -32,6 +32,9 @@ def gen_uuid(length=4):
     Returns:
         str: of length ``length``.
     """
+    if not isinstance(length, int):
+        length = 4
+    length = max(0, length)
     return ''.join([random.choice(string.hexdigits) for _ in _range(length)])
 
 
