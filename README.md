@@ -1,8 +1,6 @@
 # vivint-selenium-docker
 
-Extending Selenium with drop in replacements for Chrome and Firefox webdrivers 
-that will run inside a Docker container instead of in the user's desktop
-environment.
+Extending Selenium with drop in replacements for Chrome and Firefox webdriver classes that will run inside a Docker container instead of in the user's desktop environment.
 
 ## Getting Started
 
@@ -37,9 +35,7 @@ environment.
 
 #### You should know...
 
-- Calling `getLogger('selenium_docker').setLevel(logging.DEBUG)` during Logging setup will turn on
-lots of debug statements involved with with spawning and managing the underlying
-containers and driver instances.
+- Calling `getLogger('selenium_docker').setLevel(logging.DEBUG)` during Logging setup will turn on lots of debug statements involved with with spawning and managing the underlying containers and driver instances.
 
 - You can use the script below to stop and remove all running containers created by this library:
 
@@ -50,14 +46,11 @@ containers and driver instances.
     factory.scrub_containers()
     ```
 
-    This will do a search in the default Docker engine for all containers that use
-    our `browser` and `dynamic` labels.
+    This will do a search in the default Docker engine for all containers that use our `browser` and `dynamic` labels.
 
-- The library uses [`gevent`](http://www.gevent.org/contents.html) for its concurrency idioms. 
+- We use [`gevent`](http://www.gevent.org/contents.html) for its concurrency idioms. 
 
-- This library calls `gevent.monkey.patch_socket` to communicate with Docker engine via REST.
-
-  Other libraries may need to be patched contingent on what your project is trying to accomplish.
+- We call `gevent.monkey.patch_socket` to communicate with Docker engine via REST. Other libraries may need to be patched contingent on what your project is trying to accomplish.
   
   Read about [monkey patching](http://www.gevent.org/intro.html#monkey-patching) on the gevent website.
 
@@ -65,9 +58,7 @@ containers and driver instances.
 
 #### Basic
 
-Creates a single container with a running Chrome Driver instance inside. Connecting and 
-managing the container is all done automatically. This should function as a 
-drop in replacement for using the desktop version of Chrome and Firefox drivers.
+Creates a single container with a running Chrome Driver instance inside. Connecting and managing the container is all done automatically. This should function as a drop in replacement for using the desktop version of Chrome and Firefox drivers.
 
 ```python
 import sys
@@ -91,11 +82,7 @@ driver.quit()
 
 Used for performing a single task on multiple sites/items in parallel. 
 
-The blocking driver pool will create all the necessary containers in advance in
-order to distribute the work as resources become available. Drivers will be reused 
-until the `.execute()` call is complete. If the driver throws an Exception then
-that driver will be removed from the pool.
-
+The blocking driver pool will create all the necessary containers in advance in order to distribute the work as resources become available. Drivers will be reused  until the `.execute()` call is complete. If the driver throws an Exception then that driver will be removed from the pool.
 
 ```python
 from selenium_docker.pool import DriverPool
