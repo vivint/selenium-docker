@@ -55,6 +55,12 @@ containers and driver instances.
 
 - The library uses [`gevent`](http://www.gevent.org/contents.html) for its concurrency idioms. 
 
+- This library calls `gevent.monkey.patch_socket` to communicate with Docker engine via REST.
+
+  Other libraries may need to be patched contingent on what your project is trying to accomplish.
+  
+  Read about [monkey patching](http://www.gevent.org/intro.html#monkey-patching) on the gevent website.
+
 ## Examples
 
 #### Basic
