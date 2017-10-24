@@ -226,7 +226,7 @@ class ContainerFactory(object):
         self.logger.debug('scrubbing all containers by library')
         # attempt to stop all the containers normally
         self.stop_all_containers()
-        labels = ['browser'] + list(set(labels))
+        labels = ['browser', 'dynamic'] + list(set(labels))
         # now close all dangling containers
         for label in labels:
             containers = self.docker.containers.list(
