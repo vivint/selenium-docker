@@ -37,6 +37,7 @@ class DriverPool(object):
         self.size = size
         self.name = name or gen_uuid(6)
         self.factory = factory or ContainerFactory.get_default_factory()
+        # type: ContainerFactory
         self.logger = logger or getLogger('DriverPool.%s' % self.name)
 
         self._driver_cls = driver_cls
@@ -69,6 +70,10 @@ class DriverPool(object):
         if self._processing:
             # cannot run two executions simultaneously
             raise RuntimeError('cannot bootstrap pool, already running')
+        if self._pool:
+            self._pool.join(timeout=10.0)
+            self._pool.kill()
+            self._pool = None
         self.logger.debug('bootstrapping pool processing')
         self._processing = True
         self._results = Queue()
@@ -78,11 +83,16 @@ class DriverPool(object):
     def __cleanup(self, force=False):
         if self._processing and not force:
             raise RuntimeError('cannot cleanup driver pool while executing')
-        # cleanup running drivers
+        squid = None    # type: gevent.Greenlet
+        if self.proxy:
+            self.logger.debug('closing squid proxy')
+            squid = gevent.spawn(self.proxy.quit)
         self.logger.debug('closing all driver containers')
         while not self._drivers.empty():
             d = self._drivers.get(block=True)
             d.quit()
+        if self.proxy:
+            squid.join()
 
     def _load_drivers(self):
         if not self._drivers.empty():
@@ -134,13 +144,11 @@ class DriverPool(object):
         """
 
         def worker(o):
-            """ Process work on item ``o``. """
             job_num, item = o
             self.logger.debug('doing work on item %d' % job_num)
             driver = self._drivers.get(block=True)
             ret_val = fn(driver, item)
             if not no_wait:
-                gevent.sleep(self.INNER_THREAD_SLEEP)
                 gevent.sleep(self.INNER_THREAD_SLEEP)
             self._drivers.put(driver)
             return ret_val
@@ -153,6 +161,7 @@ class DriverPool(object):
         else:
             ittr = pool.imap_unordered
 
+        self._pool = pool
         self.logger.debug('yielding processed results')
         for o in ittr(worker, enumerate(items)):
             yield o
@@ -162,13 +171,15 @@ class DriverPool(object):
         if auto_clean:
             self.__cleanup()
 
-    def stop_async(self, timeout=None):
+    def stop_async(self, timeout=None, auto_clean=True):
         """ Stop all the async worker processing from executing.
 
         Args:
             timeout (float): number of seconds to wait for pool to finish
                 processing before killing and closing out the execution.
-
+            auto_clean (bool): cleanup docker containers after executing. If
+                multiple processing tasks are going to be used, it's more
+                performant to leave the containers running and reuse them.
         Yields:
             results: one result at a time, all that have been finished up
                 until this point.
@@ -179,20 +190,19 @@ class DriverPool(object):
         self.logger.debug('stopping async processing')
         self._processing = False
         self.logger.debug('killing async feeder thread')
-        gevent.kill(self.__feeder_green)
-        self.__feeder_green = None
+        if self.__feeder_green:
+            gevent.kill(self.__feeder_green)
+            self.__feeder_green = None
         self.logger.debug('joining async pool before kill')
-        self._pool.join(timeout=timeout)
-        self._pool.kill(block=True)
-        self.close()
+        if self._pool:
+            self._pool.join(timeout=timeout or 1.0)
+            self._pool.kill(block=True)
+        if auto_clean:
+            self.close()
         tasks_count = self._tasks.qsize()
         self.logger.info('%d tasks remained unprocessed', tasks_count)
-        self.logger.debug('draining results queue')
-        while not self._results.empty():
-            yield self._results.get()
-        raise StopIteration
 
-    def execute_async(self, fn, items):
+    def execute_async(self, fn, items=None, callback=None):
         """ Execute a fixed function in the background, streaming results.
 
         Args:
@@ -200,6 +210,9 @@ class DriverPool(object):
                 ``task``.
             items (list(Any)): list of items that need processing. Each item is
                 applied one at a time to an available driver from the pool.
+            callback (Callable): function that takes a single parameter, the
+                return value of ``fn`` when its finished processing and has
+                returned the driver to the queue.
 
         Returns:
             None
@@ -213,11 +226,10 @@ class DriverPool(object):
             self._results.put(ret_val)
             self._drivers.put(driver)
             gevent.sleep(self.INNER_THREAD_SLEEP)
-            return async_task_id
+            return ret_val
 
-        def worker_cb(g):
-            async_task_id = g.value
-            self.logger.debug('finished async task %s', async_task_id)
+        def worker_cb(task_result):
+            self.logger.debug('finished async task')
             return True
 
         def feeder():
@@ -228,8 +240,13 @@ class DriverPool(object):
                     self._pool.apply_async(
                         worker,
                         args=(fn, task,),
-                        callback=worker_cb)
+                        callback=callback)
                 gevent.sleep(self.INNER_THREAD_SLEEP)
+
+        if callback is None:
+            callback = worker_cb
+        if not callable(callback):
+            raise ValueError('cannot use %s, is not callable' % callback)
 
         self.logger.debug('starting async processing')
         self.__bootstrap()
@@ -246,25 +263,24 @@ class DriverPool(object):
             items (list(Any)): list of items that need processing. Each item is
                 applied one at a time to an available driver from the pool.
 
-        Yields:
-            item: each item back after it's been added to the task queue.
-
         Raises:
             StopIteration: when all items have been added.
         """
+        if not items:
+            raise ValueError(items)
         item_count = count(items)
         self.logger.debug('adding %d additional items to tasks', item_count)
         for o in items:
             self._tasks.put(o)
-            yield o
-        raise StopIteration
 
     def results(self, block=True):
         """ Iterate over available results from processed tasks.
 
         Args:
             block (bool): when ``True``, block this call until all tasks have
-                been processed and all results have been returned.
+                been processed and all results have been returned. Otherwise
+                this will continue indefinitely while tasks are dynamically
+                added to the async processing queue.
 
         Yields:
             results: one result at a time as they're finished.
@@ -276,15 +292,15 @@ class DriverPool(object):
         self.logger.debug('there are an estimated %d results', est_size)
         if block:
             self.logger.debug('blocking for results to finish processing')
-            while not self._tasks.empty() and not self._results.empty():
+            while (not self._tasks.empty() and not self._results.empty()) \
+                    or self._processing:
                 while not self._results.empty():
-                    yield self._results.get(block=True)
-                gevent.sleep(0.25)
-                if not self._processing:
-                    break
+                    yield self._results.get()
+                gevent.sleep(self.INNER_THREAD_SLEEP)
             raise StopIteration
         else:
-            self.logger.debug('returning as many results as have finished')
+            if est_size > 0:
+                self.logger.debug('returning as many results as have finished')
             self._results.put(StopIteration)
             for result in self._results:
                 yield result
