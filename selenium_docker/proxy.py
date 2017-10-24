@@ -31,6 +31,8 @@ class SquidProxy(AbstractProxy):
         mem_limit='256mb',
         ports={SQUID_PORT: None},
         publish_all_ports=True,
+        labels={'role': 'proxy',
+                'dynamic': 'true'},
         restart_policy={
             'Name': 'on-failure'
         })

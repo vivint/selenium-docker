@@ -233,7 +233,10 @@ class ChromeDriver(DockerDriver):
     CONTAINER = dict(
         image='selenium/standalone-chrome',
         detach=True,
-        labels={'browser': 'chrome', 'hub': 'true'},
+        labels={'role': 'browser',
+                'dynamic': 'true',
+                'browser': 'chrome',
+                'hub': 'false'},
         mem_limit='480mb',
         ports={DockerDriver.SELENIUM_PORT: None},
         publish_all_ports=True)
@@ -282,7 +285,10 @@ class FirefoxDriver(DockerDriver):
     CONTAINER = dict(
         image='selenium/standalone-firefox',
         detach=True,
-        labels={'browser': 'firefox', 'hub': 'true'},
+        labels={'role': 'browser',
+                'dynamic': 'true',
+                'browser': 'firefox',
+                'hub': 'false'},
         mem_limit='480mb',
         ports={DockerDriver.SELENIUM_PORT: None},
         publish_all_ports=True)
