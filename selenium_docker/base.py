@@ -14,6 +14,7 @@ import gevent
 from six import string_types
 from docker.errors import APIError, DockerException, NotFound
 from docker.models.containers import Container
+from docker.models.images import Image
 
 from selenium_docker.utils import gen_uuid
 
@@ -67,14 +68,17 @@ class ContainerFactory(object):
 
     @property
     def containers(self):
+        """dict: the tracked running containers mapped by name."""
         return self._containers
 
     @property
     def docker(self):
+        """DockerClient: reference to the connected Docker engine."""
         return self._engine
 
     @property
     def namespace(self):
+        """str: factory instance's namespace, used for generating names."""
         return self._ns
 
     @classmethod
@@ -100,27 +104,37 @@ class ContainerFactory(object):
         return 'selenium-%s-%s' % (self._ns, key or gen_uuid(6))
 
     def as_json(self):
-        # type: () -> dict
+        """ JSON representation of our factory metadata.
+
+        Returns:
+            dict: `json.dumps` compatible dictionary instance.
+        """
         return {
             '_ref': str(self),
             'count': len(self.containers)
         }
 
     def load_image(self, image, tag=None, insecure_registry=False,
-                   background=False, verbose=True):
+                   background=False):
         """ Issue a `docker pull` command before attempting to start/run
-            containers. This could potentially alliviate startup time, as well
-            as ensure the containers are up-to-date.
+        containers. This could potentially alliviate startup time, as well
+        as ensure the containers are up-to-date.
 
-            Args:
-                image (str):
-                tag (str):
-                insecure_registry (bool):
-                background (bool):
-                verbose (bool)
+        Args:
+            image (str): name of the container we're downloading.
+            tag (str): tag/version of the container.
+            insecure_registry (bool): allow downloading image templates from
+                insecure Docker registries.
+            background (bool): spawn the download in a background thread.
 
-            Returns:
-                Image
+        Raises:
+            DockerException: if anything goes wrong during the image
+                template download.
+
+        Returns:
+            :obj:`~docker.models.images.Image`: the Image controlled by
+                the connected Docker engine. Containers are spawned based
+                off this template.
         """
         if tag is None:
             tag = ''
@@ -134,21 +148,42 @@ class ContainerFactory(object):
         fn = partial(self.docker.images.pull,
                      image,
                      tag=tag,
-                     insecure_registry=insecure_registry,
-                     stream=verbose)
+                     insecure_registry=insecure_registry)
         if background:
             gevent.spawn(fn)
         else:
             return fn()
 
     def start_container(self, spec, **kwargs):
-        # type: (dict) -> Container
+        """ Creates and runs a new container defined by ``spec``.
+
+        Args:
+            spec (dict): the specification of our docker container. This
+                can include things such as the name, labels, image,
+                restart conditions, etc. The built-in driver containers
+                already have this defined in their class declaration.
+            kwargs ([str, str]): additional arguments that will be added
+                to ``spec``; generally dynamic modifying a static
+                definition.
+
+        Raises:
+            DockerException: when there's any problem performing start and
+                run on the container we're attemping to create.
+
+        Returns:
+            :obj:`~docker.models.containers.Container`: the newly created
+                and managed container instance.
+        """
         if 'image' not in spec:
             raise DockerException('cannot create container without image')
 
         self.logger.debug('starting container')
 
         name = spec.get('name', kwargs.get('name', self._gen_name()))
+
+        for key in kwargs.keys():
+            if key not in spec:
+                self.logger.debug('updating `%s` in spec', key)
 
         kw = dict(spec)
         kw.update(kwargs)
@@ -196,7 +231,7 @@ class ContainerFactory(object):
                 container = self.docker.containers.get(name)
             except NotFound as e:
                 self.logger.error('cannot find container via docker engine')
-                return
+                return container
             except APIError as e:
                 self.logger.exception(e, exc_info=True)
                 raise e
@@ -218,14 +253,27 @@ class ContainerFactory(object):
 
     def stop_all_containers(self):
         # type: () -> None
-        """ Remove all containers from this namespace. """
+        """ Remove all containers from this namespace.
+
+        Returns:
+            None
+        """
         self.logger.debug('stopping all containers')
         for name in self.containers.keys():
             self.stop_container(name=name)
 
     def scrub_containers(self, *labels):
         # type: (*str) -> None
-        """ Remove ALL containers that were dynamically created. """
+        """ Remove ALL containers that were dynamically created.
+
+        Args:
+            labels (*str): labels to include in our search for finding
+                containers to scrub from the connected Docker engine.
+
+        Returns:
+            int: the number of containers stopped and removed.
+        """
+        total = 0
         self.logger.debug('scrubbing all containers by library')
         # attempt to stop all the containers normally
         self.stop_all_containers()
@@ -234,9 +282,12 @@ class ContainerFactory(object):
         for label in labels:
             containers = self.docker.containers.list(
                 filters={'label': label})
+            count = len(containers)
             self.logger.debug(
                 'found %d dangling containers with label %s',
-                len(containers), label)
+                count, label)
+            total += count
             for c in containers:
                 c.stop()
                 c.remove()
+        return total
