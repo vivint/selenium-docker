@@ -14,7 +14,6 @@ import gevent
 from six import string_types
 from docker.errors import APIError, DockerException, NotFound
 from docker.models.containers import Container
-from docker.models.images import Image
 
 from selenium_docker.utils import gen_uuid
 
@@ -23,6 +22,9 @@ def check_container(fn):
     """ Ensure we're not trying to double up an external container
         with a Python instance that already has one. This would create
         dangling containers that may not get stopped programmatically.
+
+        Note:
+            This method is placed under ``base`` to prevent circular imports.
     """
     @wraps(fn)
     def inner(self, *args, **kwargs):
@@ -51,8 +53,20 @@ def check_container(fn):
 
 class ContainerFactory(object):
     DEFAULT = None
+    """:obj:`.ContainerFactory`: singleton instance to a container factory
+    that can be used to spawn new containers accross a single connected
+    Docker engine.
+    """
 
     def __init__(self, engine, namespace, make_default=True, logger=None):
+        """ Used as an interface for interacting with Container instances.
+
+        Args:
+            engine (DockerClient):
+            namespace (str):
+            make_default (bool):
+            logger (logging.Logger):
+        """
         self._containers = {}
         self._engine = engine or docker.from_env()
         self._ns = namespace or gen_uuid(8)
@@ -83,13 +97,43 @@ class ContainerFactory(object):
 
     @classmethod
     def get_default_factory(cls, logger=None):
+        """ Creates a default connection to the local Docker engine.
+
+        This ``classmethod`` acts as a singleton. If one hasn't been made it
+        will attempt to create it and attach the instance to the class
+        definition. Because of this the method is the preferable way to obtain
+        the default connection so it doesn't get overwritten or modified by
+        accident.
+
+        Note:
+            By default this method will attempt to connect to the LOCAL
+            Docker engine only. Do not use this when attempting to use
+            a remote engine on a different machine.
+
+        Args:
+            logger (:obj:`logging.Logger`): instance of logger to attach
+                to this factory instance.
+
+        Returns:
+            :obj:`.ContainerFactory`: instance to interact with Docker engine.
+        """
         if cls.DEFAULT is None:
             cls(None, None, make_default=True, logger=logger)
         return cls.DEFAULT
 
     def __bootstrap(self, container, **kwargs):
-        # type: (Container, dict) -> Container
-        """ Adds additional attributes and functions to Container instance. """
+        """ Adds additional attributes and functions to Container instance.
+
+        Args:
+            container (Container): instance of
+                :obj:`~docker.models.containers.Container` that is being
+                fixed up with expected values.
+            kwargs (dict): arbitrary attribute names and their values to
+                attach to the ``container`` instance.
+
+        Returns:
+            ``container``: the exact instance passed in.
+        """
         self.logger.debug('bootstrapping container instance to factory')
         c = container
         for k, v in kwargs.items():
@@ -100,7 +144,6 @@ class ContainerFactory(object):
         return c
 
     def _gen_name(self, key=None):
-        # type: (str) -> str
         return 'selenium-%s-%s' % (self._ns, key or gen_uuid(6))
 
     def as_json(self):
@@ -148,7 +191,8 @@ class ContainerFactory(object):
         fn = partial(self.docker.images.pull,
                      image,
                      tag=tag,
-                     insecure_registry=insecure_registry)
+                     insecure_registry=insecure_registry,
+                     stream=True)
         if background:
             gevent.spawn(fn)
         else:
@@ -252,7 +296,6 @@ class ContainerFactory(object):
             raise e
 
     def stop_all_containers(self):
-        # type: () -> None
         """ Remove all containers from this namespace.
 
         Returns:
@@ -263,7 +306,6 @@ class ContainerFactory(object):
             self.stop_container(name=name)
 
     def scrub_containers(self, *labels):
-        # type: (*str) -> None
         """ Remove ALL containers that were dynamically created.
 
         Args:
@@ -273,11 +315,19 @@ class ContainerFactory(object):
         Returns:
             int: the number of containers stopped and removed.
         """
+        def stop_remove(c):
+            try:
+                c.stop()
+                c.remove()
+            except NotFound:
+                self.logger.warning('could not find container %s', c.name)
+
         total = 0
         self.logger.debug('scrubbing all containers by library')
         # attempt to stop all the containers normally
         self.stop_all_containers()
         labels = ['browser', 'dynamic'] + list(set(labels))
+        threads = []
         # now close all dangling containers
         for label in labels:
             containers = self.docker.containers.list(
@@ -288,6 +338,7 @@ class ContainerFactory(object):
                 count, label)
             total += count
             for c in containers:
-                c.stop()
-                c.remove()
+                threads.append(gevent.spawn(stop_remove, c))
+        for t in reversed(threads):
+            t.join()
         return total

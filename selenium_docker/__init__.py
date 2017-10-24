@@ -12,6 +12,8 @@ __url__ = 'https://source.vivint.com/projects/DEVOPS/repos/vivint-selenium-docke
 
 import logging
 
+from gevent.monkey import patch_socket
+
 from selenium_docker.drivers import (
     ChromeDriver,
     DockerDriver,
@@ -31,3 +33,5 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
+
+patch_socket()

@@ -28,12 +28,13 @@ class DockerDriverMeta(type):
 
 @add_metaclass(DockerDriverMeta)
 class DockerDriver(Remote):
-    BASE_URL = 'http://{host}:{port}/wd/hub'
-    BROWSER = 'Default'
-    CONTAINER = None
-    IMPLICIT_WAIT_SECONDS = 10.0
-    QUIT_TIMEOUT_SECONDS = 3.0
-    SELENIUM_PORT = '4444/tcp'
+    BASE_URL = 'http://{host}:{port}/wd/hub'    # type: str
+    BROWSER = 'Default'                         # type: str
+    CONTAINER = None                            # type: dict
+    IMPLICIT_WAIT_SECONDS = 10.0                # type: float
+    QUIT_TIMEOUT_SECONDS = 3.0                  # type: float
+    SELENIUM_PORT = '4444/tcp'                  # type: str
+    DEFAULT_ARGUMENTS = None                    # type: list
 
     def __init__(self, user_agent=None, proxy=None, cargs=None, ckwargs=None,
                  extensions=None, logger=None, name=None, factory=None):
@@ -241,7 +242,13 @@ class ChromeDriver(DockerDriver):
         ports={DockerDriver.SELENIUM_PORT: None},
         publish_all_ports=True)
     DEFAULT_ARGUMENTS = [
+        '--data-reduction-proxy-lo-fi',
+        '--disable-3d-apis',
+        '--disable-flash-3d',
+        '--disable-offer-store-unmasked-wallet-cards',
+        '--disable-offer-upload-credit-cards',
         '--disable-translate',
+        '--disable-win32k-renderer-lockdown',
         '--start-maximized'
     ]
 
