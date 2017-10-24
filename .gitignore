@@ -3,6 +3,8 @@
 .testrepository
 doc/build
 scratch*.*
+results.xml
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
