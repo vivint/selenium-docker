@@ -182,7 +182,8 @@ class ContainerFactory(object):
         Returns:
             None
         """
-        e = None    # Exception
+        e = None            # type: Exception
+        container = None    # type: Container
         if key and not name:
             name = self._gen_name(key=key)
         if not name:
@@ -193,8 +194,10 @@ class ContainerFactory(object):
             #  so we need to query the docker engine and see if it's there.
             try:
                 container = self.docker.containers.get(name)
-            except (APIError, NotFound) as e:
+            except NotFound as e:
                 self.logger.error('cannot find container via docker engine')
+                return
+            except APIError as e:
                 self.logger.exception(e, exc_info=True)
                 raise e
         else:

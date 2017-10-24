@@ -6,7 +6,6 @@
 
 import logging
 
-import docker
 from docker import DockerClient
 from docker.models.containers import Container
 from selenium.webdriver.common.proxy import Proxy, ProxyType
