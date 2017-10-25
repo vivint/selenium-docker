@@ -14,21 +14,19 @@ import logging
 
 from gevent.monkey import patch_socket
 
-from selenium_docker.drivers import (
-    ChromeDriver,
-    DockerDriver,
-    FirefoxDriver
-)
+from selenium_docker.drivers.chrome import ChromeDriver, ChromeVideoDriver
+from selenium_docker.drivers.firefox import FirefoxDriver, FirefoxVideoDriver
+
 from selenium_docker.meta import config
 from selenium_docker.pool import DriverPool
 from selenium_docker.proxy import SquidProxy
 
-
 __all__ = [
     'ChromeDriver',
-    'DockerDriver',
+    'ChromeVideoDriver',
     'DriverPool',
     'FirefoxDriver',
+    'FirefoxVideoDriver',
     'SquidProxy',
     'config'
 ]

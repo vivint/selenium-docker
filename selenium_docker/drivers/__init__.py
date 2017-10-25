@@ -5,20 +5,25 @@
 # <<
 
 import logging
+import os
+import tarfile
+import time
 from abc import abstractmethod
+from datetime import datetime
 
 import requests
-from six import add_metaclass
-from toolz.functoolz import juxt
 from docker.errors import DockerException
-from tenacity import retry, wait_fixed, stop_after_delay
-from selenium.webdriver.common.proxy import Proxy
+from dotmap import DotMap
 from selenium.webdriver import Remote
-from selenium.webdriver import (
-    ChromeOptions, FirefoxProfile, DesiredCapabilities)
+from selenium.webdriver.common.proxy import Proxy
+from six import add_metaclass
+from tenacity import retry, stop_after_delay, wait_fixed
+from toolz.functoolz import juxt
 
+from selenium_docker.meta import config
 from selenium_docker.base import ContainerFactory, check_container
-from selenium_docker.utils import ip_port, gen_uuid, ref_counter
+from selenium_docker.utils import (
+    gen_uuid, ip_port, ref_counter, parse_metadata)
 
 
 class DockerDriverMeta(type):
@@ -27,7 +32,7 @@ class DockerDriverMeta(type):
 
 
 @add_metaclass(DockerDriverMeta)
-class DockerDriver(Remote):
+class DockerDriverBase(Remote):
     BASE_URL = 'http://{host}:{port}/wd/hub'    # type: str
     BROWSER = 'Default'                         # type: str
     CONTAINER = None                            # type: dict
@@ -99,7 +104,7 @@ class DockerDriver(Remote):
         capabilities, profile = fn(args, extensions, self._proxy, user_agent)
         try:
             # build our web driver
-            super(DockerDriver, self).__init__(
+            super(DockerDriverBase, self).__init__(
                 self._base_url, desired_capabilities=capabilities,
                 browser_profile=profile, keep_alive=False)
         except Exception as e:
@@ -113,7 +118,7 @@ class DockerDriver(Remote):
     def __repr__(self):
         if not hasattr(self, 'session_id'):
             return '<%s(%s)>' % (self.identity, self._name)
-        return super(DockerDriver, self).__repr__()
+        return super(DockerDriverBase, self).__repr__()
 
     @property
     def base_url(self):
@@ -227,118 +232,132 @@ class DockerDriver(Remote):
         return self.factory.start_container(self.CONTAINER, **kwargs)
 
 
-class ChromeDriver(DockerDriver):
-    """ Chrome browser inside Docker. """
+class VideoDriver(DockerDriverBase):
+    """ Chrome browser inside Docker with video recording of its lifetime. """
 
-    BROWSER = 'Chrome'
-    CONTAINER = dict(
-        image='selenium/standalone-chrome',
-        detach=True,
-        labels={'role': 'browser',
-                'dynamic': 'true',
-                'browser': 'chrome',
-                'hub': 'false'},
-        mem_limit='480mb',
-        ports={DockerDriver.SELENIUM_PORT: None},
-        publish_all_ports=True)
-    DEFAULT_ARGUMENTS = [
-        '--data-reduction-proxy-lo-fi',
-        '--disable-3d-apis',
-        '--disable-flash-3d',
-        '--disable-offer-store-unmasked-wallet-cards',
-        '--disable-offer-upload-credit-cards',
-        '--disable-translate',
-        '--disable-win32k-renderer-lockdown',
-        '--start-maximized'
-    ]
+    commands = DotMap(
+        stop_ffmpeg  = 'pkill ffmpeg',
+        start_ffmpeg = (
+            'ffmpeg -y -f x11grab -s {resolution} -framerate {fps}'
+            ' -i :99+0,0 {metadata} -qp 18 -c:v libx264'
+            ' -preset ultrafast {filename}'))
 
-    def _capabilities(self, arguments, extensions, proxy, user_agent):
-        """ Compile the capabilities of ChromeDriver inside the Container.
+    def __init__(self, path, *args, **kwargs):
+        super(VideoDriver, self).__init__(*args, **kwargs)
+        # marker attributes
+        if not os.path.isdir(path):
+            raise IOError('path %s in not a directory' % path)
+        self.save_path = path                   # type: str
+        self._time = int(time.time())           # type: int
+        self.__is_recording = False             # type: bool
+        self.__recording_path = os.path.join(   # type: str
+            config.ffmpeg_location, self.filename)
+        if self._perform_check_container_ready():
+            self.start_recording()
 
-        Args:
-            arguments (list):
-            extensions (list):
-            proxy (Proxy):
-            user_agent (str):
+    @property
+    def filename(self):
+        """str: filename to apply to the extracted video stream."""
+        return ('%s-docker-%s.mkv' % (self.BROWSER, self._time)).lower()
 
-        Returns:
-            ChromeOptions
-        """
-        options = ChromeOptions()
-        options.add_experimental_option(
-            'prefs', {'profile.managed_default_content_settings.images': 2})
-        args = list(self.DEFAULT_ARGUMENTS)
-        args.extend(arguments)
-        for arg in args:
-            options.add_argument(arg)
-        if user_agent:
-            options.add_argument('--user-agent=' + user_agent)
-        for ext in extensions:
-            options.add_extension(ext)
-        c = options.to_capabilities()
-        if proxy:
-            proxy.add_to_capabilities(c)
-        return c
+    def quit(self):
+        if self.__is_recording:
+            self.stop_recording(self.save_path)
+        super(VideoDriver, self).quit()
 
-    def _profile(self, arguments, extensions, proxy, user_agent):
-        """ No-op for ChromeDriver. """
-        return None
-
-
-class FirefoxDriver(DockerDriver):
-    """ Firefox browser inside Docker. """
-
-    BROWSER = 'Firefox'
-    CONTAINER = dict(
-        image='selenium/standalone-firefox',
-        detach=True,
-        labels={'role': 'browser',
-                'dynamic': 'true',
-                'browser': 'firefox',
-                'hub': 'false'},
-        mem_limit='480mb',
-        ports={DockerDriver.SELENIUM_PORT: None},
-        publish_all_ports=True)
-    DEFAULT_ARGUMENTS = [
-        ('browser.startup.homepage', 'about:blank')
-    ]
-
-    def _capabilities(self, arguments, extensions, proxy, user_agent):
-        """ Compile the capabilities of FirefoxDriver inside the Container.
+    def stop_recording(self, path, shard_by_date=True, environment=None):
+        """ Stops the ffmpeg video recording inside the container.
 
         Args:
-            arguments (list): unused.
-            extensions (list): unused.
-            proxy (Proxy): adds proxy instance to DesiredCapabilities.
-            user_agent (str): unused.
+            path (str):
+            shard_by_date (bool):
+            environment (dict):
+
+        Raises:
+            ValueError: when ``path`` is not an existing folder path.
+            IOError: when there's a problem creating the folder for video
+                recorded files.
 
         Returns:
-            dict
+            str: file path to completed recording. This value is adjusted
+                for ``shard_by_date``.
         """
-        c = DesiredCapabilities.FIREFOX.copy()
-        if proxy:
-            proxy.add_to_capabilities(c)
-        return c
+        if not self.__is_recording:
+            raise RuntimeError(
+                'cannot stop recording, recording not in progress')
 
-    def _profile(self, arguments, extensions, proxy, user_agent):
-        """ Compile the capabilities of ChromeDriver inside the Container.
+        self.container.exec_run(self.commands.stop_ffmpeg,
+                                environment=environment,
+                                detach=False)
+
+        if not os.path.isdir(path):
+            raise ValueError('%s is not a directory' % path)
+
+        if shard_by_date:
+            # split the final destination into a folder tree by date
+            ts = datetime.fromtimestamp(self._time)
+            path = os.path.join(path, str(ts.year), str(ts.month), str(ts.day))
+
+        if not os.path.exists(path):
+            try:
+                os.makedirs(path)
+            except IOError as e:
+                self.logger.exception(e, exc_info=True)
+                raise e
+
+        source = self.__recording_path
+        destination = os.path.join(path, self.filename)
+        tar_dest = '%s.tar' % destination
+
+        stream, stat = self.container.get_archive(source)
+        self.logger.debug(
+            'video stats, name:%s, size:%s', stat['name'], stat['size'])
+        with open(tar_dest, 'wb') as out_file:
+            out_file.write(stream.data)
+        if not tarfile.is_tarfile(tar_dest):
+            raise RuntimeError('invalid tar file from container %s' % tar_dest)
+        self.logger.debug('extracting tar archive')
+        tar = tarfile.open(name=tar_dest)
+        tar.extractall(path)
+        os.unlink(tar_dest)
+        self.__is_recording = False
+        return destination
+
+    def start_recording(self, metadata=None, environment=None):
+        """ Starts the ffmpeg video recording inside the container.
 
         Args:
-            arguments (list):
-            extensions (list):
-            proxy (Proxy): unused.
-            user_agent (str):
+            metadata (dict): arbitrary data to attach to the video file.
+            environment (dict): environment variables to inject inside the
+                running container before launching ffmpeg.
 
         Returns:
-            FirefoxProfile
+            str: the absolute file path of the file being recorded.
         """
-        profile = FirefoxProfile()
-        for ext in extensions:
-            profile.add_extension(ext)
-        args = list(self.DEFAULT_ARGUMENTS)
-        args.extend(arguments)
-        for arg_k, value in args:
-            profile.set_preference(arg_k, value)
-        if user_agent:
-            profile.set_preference('general.useragent.override', user_agent)
-        return profile
+        if self.__is_recording:
+            raise RuntimeError(
+                'already recording, cannot start recording again')
+
+        if not metadata:
+            metadata = {}
+
+        self.__is_recording = True
+
+        for s, v in [
+                ('title', self.filename),
+                ('language', 'English'),
+                ('encoded_by', 'docker+ffmpeg'),
+                ('description',
+                    getattr(self, 'DESCRIPTION', config.ffmpeg_description))]:
+            metadata.setdefault(s, v)
+
+        cmd = self.commands.start_ffmpeg.format(
+            resolution=config.ffmpeg_resolution,
+            fps=config.ffmpeg_fps,
+            metadata=parse_metadata(metadata),
+            filename=self.__recording_path)
+        self.logger.debug(
+            'starting recording to file %s', self.__recording_path)
+        self.logger.debug('cmd: %s', cmd)
+        self.container.exec_run(cmd, environment=environment, detach=True)
+        return self.__recording_path

@@ -12,7 +12,7 @@ from gevent.queue import Queue, JoinableQueue
 from toolz.itertoolz import count
 
 from selenium_docker.base import ContainerFactory
-from selenium_docker.drivers import ChromeDriver
+from selenium_docker.drivers.chrome import ChromeDriver
 from selenium_docker.proxy import SquidProxy
 from selenium_docker.utils import gen_uuid
 
