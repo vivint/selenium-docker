@@ -336,6 +336,7 @@ class ContainerFactory(object):
         self.stop_all_containers()
         labels = ['browser', 'dynamic'] + list(set(labels))
         threads = []
+        found = set()
         # now close all dangling containers
         for label in labels:
             containers = self.docker.containers.list(
@@ -346,7 +347,9 @@ class ContainerFactory(object):
                 count, label)
             total += count
             for c in containers:
-                threads.append(gevent.spawn(stop_remove, c))
+                if c.name not in found:
+                    found.add(c.name)
+                    threads.append(gevent.spawn(stop_remove, c))
         for t in reversed(threads):
             t.join()
         return total
