@@ -131,6 +131,27 @@ def memoize(key):
     return inner
 
 
+def parse_metadata(meta):
+    """ Convert a dictionary into proper formatting for ffmpeg.
+
+    Args:
+        meta (dict): data to convert.
+
+    Returns:
+        str: post-formatted string generated from ``meta``.
+    """
+    NO_CHR = '\'"'
+    valid_chars = [c for c in string.printable if c not in NO_CHR]
+    pieces = []
+    for k, v in meta.items():
+        v = ''.join([c for c in v if c in valid_chars])
+        if len(v) == 0:
+            continue
+        text = '-metadata {key}="{value}"'.format(key=str(k).lower(), value=v)
+        pieces.append(text)
+    return ' '.join(pieces)
+
+
 def ref_counter(key, direction, callback_fn=None):
     """ Counts the references for a given key.
 
