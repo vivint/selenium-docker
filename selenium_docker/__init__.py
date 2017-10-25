@@ -19,6 +19,7 @@ from selenium_docker.drivers import (
     DockerDriver,
     FirefoxDriver
 )
+from selenium_docker.meta import config
 from selenium_docker.pool import DriverPool
 from selenium_docker.proxy import SquidProxy
 
@@ -28,7 +29,8 @@ __all__ = [
     'DockerDriver',
     'DriverPool',
     'FirefoxDriver',
-    'SquidProxy'
+    'SquidProxy',
+    'config'
 ]
 
 logger = logging.getLogger(__name__)
