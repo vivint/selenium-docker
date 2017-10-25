@@ -115,7 +115,8 @@ class ContainerFactory(object):
                 to this factory instance.
 
         Returns:
-            :obj:`.ContainerFactory`: instance to interact with Docker engine.
+            :py:obj:`~selenium_docker.base.ContainerFactory`:
+                instance to interact with Docker engine.
         """
         if cls.DEFAULT is None:
             cls(None, None, make_default=True, logger=logger)
@@ -186,8 +187,15 @@ class ContainerFactory(object):
         if not isinstance(image, string_types):
             raise ValueError('cannot determine image from %s' % type(image))
 
-        self.logger.debug('loading image, %s:%s', image, tag or 'latest')
+        try:
+            self.logger.debug('checking locally for image')
+            img = self.docker.images.get(image)
+        except NotFound as e:
+            self.logger.debug('could not find image locally, %s', image)
+        else:
+            return img
 
+        self.logger.debug('loading image, %s:%s', image, tag or 'latest')
         fn = partial(self.docker.images.pull,
                      image,
                      tag=tag,
@@ -328,6 +336,7 @@ class ContainerFactory(object):
         self.stop_all_containers()
         labels = ['browser', 'dynamic'] + list(set(labels))
         threads = []
+        found = set()
         # now close all dangling containers
         for label in labels:
             containers = self.docker.containers.list(
@@ -338,7 +347,9 @@ class ContainerFactory(object):
                 count, label)
             total += count
             for c in containers:
-                threads.append(gevent.spawn(stop_remove, c))
+                if c.name not in found:
+                    found.add(c.name)
+                    threads.append(gevent.spawn(stop_remove, c))
         for t in reversed(threads):
             t.join()
         return total

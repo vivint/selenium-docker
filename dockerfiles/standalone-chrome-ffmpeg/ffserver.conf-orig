@@ -1,0 +1,57 @@
+HTTPPort             8090
+HTTPBindAddress      0.0.0.0
+MaxHTTPConnections   200
+MaxClients           100
+MaxBandwidth         50000
+CustomLog -
+
+<Feed ins.ffm>
+   File ./ins.ffm
+   FileMaxSize {STREAM_FILESIZE}
+   ACL allow 127.0.0.1
+   Launch ffmpeg -f x11grab -s {SCREEN_WIDTH}x{SCREEN_HEIGHT} -framerate {FRAMERATE} -i {DISPLAY}+0,0 -bufsize {OUT_BUFFER}k -qscale {QUALITY} -c:v libx264 -preset ultrafast
+</Feed>
+
+<Stream out.webm>
+   Feed ins.ffm
+   Format webm
+
+   # Video Settings
+   VideoCodec                 libvpx
+   VideoFrameRate             {FRAMERATE}
+   VideoSize                  {OUT_WIDTH}x{OUT_HEIGHT}
+   VideoBufferSize            {IN_BUFFER_KB}
+   VideoQMin                  8
+   VideoQMax                  48
+   VideoQDiff                 4
+   VideoBitRate               1200        # kbits/s
+   VideoBitRateRange          550-1500    # kbits/s
+   AVOptionVideo              me_range 16
+   AVOptionVideo              flags +global_header
+
+   # Audio settings
+   NoAudio
+
+   # Streaming settings
+   MaxTime 0
+   PreRoll 2
+   StartSendOnKey
+
+   Strict -1
+</Stream>
+
+<Stream thumb.jpg>
+   Feed ins.ffm
+   Format jpeg
+   VideoFrameRate 1
+   VideoIntraOnly
+   VideoSize {SCREEN_WIDTH}x{SCREEN_HEIGHT}
+   NoAudio
+   Strict -1
+</Stream>
+
+<Stream status.html>
+   Format status
+   ACL allow localhost
+   ACL allow 192.168.0.0 192.168.255.255
+</Stream>
