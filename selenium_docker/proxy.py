@@ -67,8 +67,15 @@ class SquidProxy(AbstractProxy):
         self.factory.stop_container(name=self.name)
 
     @staticmethod
-    def make_proxy(http, port=None):
-        proxy = Proxy()
-        proxy.proxy_type = ProxyType.MANUAL
-        proxy.http_proxy = '%s:%d' % (http, port)
+    def make_proxy(http, port=None, https=None, socks=None):
+        if socks is None:
+            socks = {}
+        proxy = Proxy({
+            'proxyType': ProxyType.MANUAL,
+            'httpProxy': '%s:%d' % (http, port),
+            'sslProxy': https,
+            'socksProxy': socks.get('proxy'),
+            'socksUsername': socks.get('username'),
+            'socksPassword': socks.get('password')
+        })
         return proxy
