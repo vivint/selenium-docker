@@ -6,6 +6,7 @@
 
 import logging
 
+from aenum import Flag
 from selenium.webdriver.support import ui
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as expect
@@ -14,6 +15,28 @@ from selenium_docker.utils import memoize
 
 HTML_TAG = (By.TAG_NAME, 'html')
 """(str, str): tuple representing an <HTML> tag."""
+
+
+class JsonFlags(Flag):
+    """ :obj:`aenum.Flag` mixin to return members as JSON dict. """
+
+    @classmethod
+    def as_json(cls):
+        """dict: returns JSON compatible dict. """
+        return {str(k): v.value for k, v in cls.__members__.items()}
+
+    @classmethod
+    def from_values(cls, *values):
+        ret = cls(0)
+        for v in values:
+            if isinstance(v, str):
+                x = cls.__members__.get(v)
+            elif isinstance(v, int):
+                x = cls(v)
+            else:
+                raise ValueError(v)
+            ret = ret | x
+        return ret
 
 
 class OperationsMixin(object):

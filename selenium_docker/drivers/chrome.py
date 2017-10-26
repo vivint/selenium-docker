@@ -4,21 +4,23 @@
 #     vivint-selenium-docker, 2017
 # <<
 
-from aenum import Flag, auto
+from aenum import auto
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 
 from selenium_docker.drivers import DockerDriverBase, VideoDriver
+from selenium_docker.helpers import JsonFlags
+
+
+class Flags(JsonFlags):
+    DISABLED    = 0
+    X_IMG       = auto()
+    X_3D        = auto()
+    X_OFFERS    = auto()
+    ALL         = ~DISABLED
 
 
 class ChromeDriver(DockerDriverBase):
     """ Chrome browser inside Docker. """
-
-    class Flags(Flag):
-        DISABLED    = 0
-        X_IMG       = auto()
-        X_3D        = auto()
-        X_OFFERS    = auto()
-        ALL         = ~DISABLED
 
     BROWSER = 'Chrome'
     CONTAINER = dict(
@@ -37,6 +39,8 @@ class ChromeDriver(DockerDriverBase):
         '--start-maximized'
     ]
 
+    Flags = Flags
+
     def _capabilities(self, arguments, extensions, proxy, user_agent):
         """ Compile the capabilities of ChromeDriver inside the Container.
 
@@ -49,21 +53,22 @@ class ChromeDriver(DockerDriverBase):
         Returns:
             ChromeOptions
         """
+        self.logger.debug('building capabilities')
         options = ChromeOptions()
         args = list(self.DEFAULT_ARGUMENTS)
 
-        if self.Flags.X_IMG & self.flags:
+        if self._f(Flags.X_IMG):
             options.add_experimental_option(
                 'prefs', {
                     'profile.managed_default_content_settings.images': 2
                 })
 
-        if self.Flags.X_3D & self.flags:
+        if self._f(Flags.X_3D):
             args.extend([
                 '--disable-3d-apis',
                 '--disable-flash-3d'])
 
-        if self.Flags.X_OFFERS & self.flags:
+        if self._f(Flags.X_OFFERS):
             args.extend([
                 '--disable-offer-store-unmasked-wallet-cards',
                 '--disable-offer-upload-credit-cards',
@@ -83,6 +88,7 @@ class ChromeDriver(DockerDriverBase):
 
     def _profile(self, arguments, extensions, proxy, user_agent):
         """ No-op for ChromeDriver. """
+        self.logger.debug('building browser profile')
         return None
 
 

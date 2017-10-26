@@ -4,20 +4,22 @@
 #     vivint-selenium-docker, 2017
 # <<
 
-from aenum import Flag, auto
+from aenum import auto
 from selenium.webdriver import DesiredCapabilities, FirefoxProfile
 
 from selenium_docker.drivers import DockerDriverBase, VideoDriver
+from selenium_docker.helpers import JsonFlags
+
+
+class Flags(JsonFlags):
+    DISABLED    = 0
+    X_IMG       = auto()
+    X_FLASH     = auto()
+    ALL         = ~DISABLED
 
 
 class FirefoxDriver(DockerDriverBase):
     """ Firefox browser inside Docker. """
-
-    class Flags(Flag):
-        DISABLED    = 0
-        X_IMG       = auto()
-        X_FLASH     = auto()
-        ALL         = ~DISABLED
 
     BROWSER = 'Firefox'
     CONTAINER = dict(
@@ -34,6 +36,8 @@ class FirefoxDriver(DockerDriverBase):
         ('browser.startup.homepage', 'about:blank')
     ]
 
+    Flags = Flags
+
     def _capabilities(self, arguments, extensions, proxy, user_agent):
         """ Compile the capabilities of FirefoxDriver inside the Container.
 
@@ -46,6 +50,7 @@ class FirefoxDriver(DockerDriverBase):
         Returns:
             dict
         """
+        self.logger.debug('building capabilities')
         c = DesiredCapabilities.FIREFOX.copy()
         if proxy:
             proxy.add_to_capabilities(c)
@@ -63,14 +68,15 @@ class FirefoxDriver(DockerDriverBase):
         Returns:
             FirefoxProfile
         """
+        self.logger.debug('building browser profile')
         profile = FirefoxProfile()
         args = list(self.DEFAULT_ARGUMENTS)
 
-        if self.Flags.X_IMG & self.flags:
+        if self._f(Flags.X_IMG):
             args.append(
                 ('permissions.default.image', '2'))
 
-        if self.Flags.X_FLASH & self.flags:
+        if self._f(Flags.X_FLASH):
             args.append(
                 ('dom.ipc.plugins.enabled.libflashplayer.so', 'false'))
 

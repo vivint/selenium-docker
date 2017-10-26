@@ -110,8 +110,7 @@ class DockerDriverBase(Remote):
             raise ValueError('invalid proxy type, %s' % type(proxy))
 
         # build our web driver capabilities
-        if not flags:
-            self.flags = self.Flags.DISABLED
+        self.flags = self.Flags.DISABLED if not flags else flags
         fn = juxt(self._capabilities, self._profile)
         capabilities, profile = fn(args, extensions, self._proxy, user_agent)
         try:
@@ -169,6 +168,17 @@ class DockerDriverBase(Remote):
         """
         self.logger.debug('closing and removing container')
         self.factory.stop_container(name=self.name)
+
+    def _f(self, flag):
+        """ Helper function for checking if we included a flag.
+
+        Args:
+            flag (:obj:`aenum.Flag`): instance of ``Flag``.
+
+        Returns:
+            bool
+        """
+        return flag & self.flags
 
     @abstractmethod
     def _capabilities(self, arguments, extensions, proxy, user_agent):
