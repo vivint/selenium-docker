@@ -58,6 +58,8 @@ class ContainerFactory(object):
     Docker engine.
     """
 
+    __slots__ = ('_containers', '_engine', '_ns', 'logger')
+
     def __init__(self, engine, namespace, make_default=True, logger=None):
         """ Used as an interface for interacting with Container instances.
 
@@ -69,12 +71,17 @@ class ContainerFactory(object):
         """
         self._containers = {}
         self._engine = engine or docker.from_env()
-        self._ns = namespace or gen_uuid(8)
+        self._ns = namespace or gen_uuid(10)
         self.logger = logger or logging.getLogger(
             '%s.ContainerFactory.%s' % (__name__, self._ns))
 
         if make_default and ContainerFactory.DEFAULT is None:
             ContainerFactory.DEFAULT = self
+
+        if namespace:
+            # we supplied the namespace, we can bootstrap our
+            #  tracked containers back from the environment
+            self._containers = self.get_namespace_containers(namespace)
 
     def __repr__(self):
         return '<ContainerFactory(docker=%s,ns=%s,count=%d)>' % (
@@ -96,7 +103,7 @@ class ContainerFactory(object):
         return self._ns
 
     @classmethod
-    def get_default_factory(cls, logger=None):
+    def get_default_factory(cls, namespace=None, logger=None):
         """ Creates a default connection to the local Docker engine.
 
         This ``classmethod`` acts as a singleton. If one hasn't been made it
@@ -111,6 +118,7 @@ class ContainerFactory(object):
             a remote engine on a different machine.
 
         Args:
+            namespace (str):
             logger (:obj:`logging.Logger`): instance of logger to attach
                 to this factory instance.
 
@@ -119,8 +127,24 @@ class ContainerFactory(object):
                 instance to interact with Docker engine.
         """
         if cls.DEFAULT is None:
-            cls(None, None, make_default=True, logger=logger)
+            cls(None, namespace, make_default=True, logger=logger)
         return cls.DEFAULT
+
+    def get_namespace_containers(self, ns):
+        """ Glean the running containers from the environment that are
+        using our factory's namespace.
+
+        Args:
+            ns (str):
+
+        Returns:
+            dict: ``Container`` instances mapped by name.
+        """
+        ret = {}
+        for c in self.docker.containers.list():
+            if ns in c.name:
+                ret[c.name] = c
+        return ret
 
     def __bootstrap(self, container, **kwargs):
         """ Adds additional attributes and functions to Container instance.
@@ -144,7 +168,7 @@ class ContainerFactory(object):
         c.ns = self._ns
         return c
 
-    def _gen_name(self, key=None):
+    def gen_name(self, key=None):
         return 'selenium-%s-%s' % (self._ns, key or gen_uuid(6))
 
     def as_json(self):
@@ -231,7 +255,7 @@ class ContainerFactory(object):
 
         self.logger.debug('starting container')
 
-        name = spec.get('name', kwargs.get('name', self._gen_name()))
+        name = spec.get('name', kwargs.get('name', self.gen_name()))
 
         for key in kwargs.keys():
             if key not in spec:
@@ -272,7 +296,7 @@ class ContainerFactory(object):
         e = None            # type: Exception
         container = None    # type: Container
         if key and not name:
-            name = self._gen_name(key=key)
+            name = self.gen_name(key=key)
         if not name:
             raise ValueError('`name` and `key` cannot both be None')
         if name not in self.containers:

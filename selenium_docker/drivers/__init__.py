@@ -23,8 +23,7 @@ from toolz.functoolz import juxt
 
 from selenium_docker.meta import config
 from selenium_docker.base import ContainerFactory, check_container
-from selenium_docker.utils import (
-    gen_uuid, ip_port, ref_counter, parse_metadata)
+from selenium_docker.utils import ip_port, ref_counter, parse_metadata
 
 
 class DockerDriverMeta(type):
@@ -47,8 +46,7 @@ class DockerDriverBase(Remote):
         ALL = 1
 
     def __init__(self, user_agent=None, proxy=None, cargs=None, ckwargs=None,
-                 extensions=None, logger=None, name=None, factory=None,
-                 flags=None):
+                 extensions=None, logger=None, factory=None, flags=None):
         """ Selenium compatible Remote Driver instance.
 
         Args:
@@ -63,9 +61,6 @@ class DockerDriverBase(Remote):
             extensions (list): list of file locations loaded as
                 browser extensions.
             logger (Logger): logging module Logger instance.
-            name (str): name of the container. It's recommend to leave the
-                value as `None` so container names can be generated on
-                demand as they're created.
             factory (:obj:`~selenium_docker.base.ContainerFactory`):
             flags (:obj:`aenum.Flag`):
 
@@ -78,23 +73,22 @@ class DockerDriverBase(Remote):
         ckwargs = ckwargs or {}
         extensions = extensions or []
 
-        # ensure we have a name defined for our container
-        self._name = ckwargs.get('name', name) or 'selenium-%s' % gen_uuid()
-        self.logger = logger or logging.getLogger(
-            '%s.%s.%s' % (__name__, self.identity, self.name))
-
-        ckwargs['name'] = self._name
-
         # create the container
         self.factory = factory or ContainerFactory.get_default_factory()
         self.factory.load_image(self.CONTAINER, background=False)
+
+        self._name = ckwargs.setdefault('name', self.factory.gen_name())
+        self.logger = logger or logging.getLogger(
+            '%s.%s.%s' % (__name__, self.identity, self.name))
+
         self.container = self._make_container(**ckwargs)
         self._base_url = self._get_url()
-        self._perform_check_container_ready()
 
         # user_agent can also be a callable function to randomly select one
         #  at instantiation time
         user_agent = user_agent() if callable(user_agent) else user_agent
+
+        self._perform_check_container_ready()
 
         # figure out if we're using a proxy
         self._proxy, self._proxy_container = None, None
