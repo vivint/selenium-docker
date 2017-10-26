@@ -1,7 +1,7 @@
+aenum==2.0.8
 docker==2.5.1
 dotmap==1.2.20
 gevent==1.2.2
-greenlet==0.4.12
 requests==2.18.4
 selenium==3.6.0
 tenacity==4.4.0

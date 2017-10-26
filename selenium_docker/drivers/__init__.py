@@ -4,14 +4,15 @@
 #     vivint-selenium-docker, 2017
 # <<
 
-import logging
 import os
-import tarfile
 import time
+import logging
+import tarfile
 from abc import abstractmethod
 from datetime import datetime
 
 import requests
+from aenum import Flag
 from docker.errors import DockerException
 from dotmap import DotMap
 from selenium.webdriver import Remote
@@ -41,12 +42,20 @@ class DockerDriverBase(Remote):
     SELENIUM_PORT = '4444/tcp'                  # type: str
     DEFAULT_ARGUMENTS = None                    # type: list
 
+    class Flags(Flag):
+        DISABLED = 0
+        ALL = 1
+
     def __init__(self, user_agent=None, proxy=None, cargs=None, ckwargs=None,
-                 extensions=None, logger=None, name=None, factory=None):
+                 extensions=None, logger=None, name=None, factory=None,
+                 flags=None):
         """ Selenium compatible Remote Driver instance.
 
         Args:
-            user_agent (str): overwrite browser's default user agent.
+            user_agent (str or Callable): overwrite browser's default
+                user agent. If ``user_agent`` is a Callable then the result
+                will be used as the user agent string for this browser
+                instance.
             proxy (Proxy,SquidProxy): Proxy (or SquidProxy) instance
                 that routes container traffic.
             cargs (list): container creation arguments.
@@ -57,7 +66,8 @@ class DockerDriverBase(Remote):
             name (str): name of the container. It's recommend to leave the
                 value as `None` so container names can be generated on
                 demand as they're created.
-            factory (ContainerFactory):
+            factory (:obj:`~selenium_docker.base.ContainerFactory`):
+            flags (:obj:`aenum.Flag`):
 
         Raises:
             ValueError: when ``proxy`` is an unknown/invalid value.
@@ -100,6 +110,8 @@ class DockerDriverBase(Remote):
             raise ValueError('invalid proxy type, %s' % type(proxy))
 
         # build our web driver capabilities
+        if not flags:
+            self.flags = self.Flags.DISABLED
         fn = juxt(self._capabilities, self._profile)
         capabilities, profile = fn(args, extensions, self._proxy, user_agent)
         try:

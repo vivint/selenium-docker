@@ -4,6 +4,7 @@
 #     vivint-selenium-docker, 2017
 # <<
 
+from aenum import Flag, auto
 from selenium.webdriver import DesiredCapabilities, FirefoxProfile
 
 from selenium_docker.drivers import DockerDriverBase, VideoDriver
@@ -11,6 +12,12 @@ from selenium_docker.drivers import DockerDriverBase, VideoDriver
 
 class FirefoxDriver(DockerDriverBase):
     """ Firefox browser inside Docker. """
+
+    class Flags(Flag):
+        DISABLED    = 0
+        X_IMG       = auto()
+        X_FLASH     = auto()
+        ALL         = ~DISABLED
 
     BROWSER = 'Firefox'
     CONTAINER = dict(
@@ -57,9 +64,19 @@ class FirefoxDriver(DockerDriverBase):
             FirefoxProfile
         """
         profile = FirefoxProfile()
+        args = list(self.DEFAULT_ARGUMENTS)
+
+        if self.Flags.X_IMG & self.flags:
+            args.append(
+                ('permissions.default.image', '2'))
+
+        if self.Flags.X_FLASH & self.flags:
+            args.append(
+                ('dom.ipc.plugins.enabled.libflashplayer.so', 'false'))
+
         for ext in extensions:
             profile.add_extension(ext)
-        args = list(self.DEFAULT_ARGUMENTS)
+
         args.extend(arguments)
         for arg_k, value in args:
             profile.set_preference(arg_k, value)

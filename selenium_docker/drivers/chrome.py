@@ -4,6 +4,7 @@
 #     vivint-selenium-docker, 2017
 # <<
 
+from aenum import Flag, auto
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 
 from selenium_docker.drivers import DockerDriverBase, VideoDriver
@@ -11,6 +12,13 @@ from selenium_docker.drivers import DockerDriverBase, VideoDriver
 
 class ChromeDriver(DockerDriverBase):
     """ Chrome browser inside Docker. """
+
+    class Flags(Flag):
+        DISABLED    = 0
+        X_IMG       = auto()
+        X_3D        = auto()
+        X_OFFERS    = auto()
+        ALL         = ~DISABLED
 
     BROWSER = 'Chrome'
     CONTAINER = dict(
@@ -25,11 +33,6 @@ class ChromeDriver(DockerDriverBase):
         publish_all_ports=True)
     DEFAULT_ARGUMENTS = [
         '--data-reduction-proxy-lo-fi',
-        '--disable-3d-apis',
-        '--disable-flash-3d',
-        '--disable-offer-store-unmasked-wallet-cards',
-        '--disable-offer-upload-credit-cards',
-        '--disable-translate',
         '--disable-win32k-renderer-lockdown',
         '--start-maximized'
     ]
@@ -47,9 +50,25 @@ class ChromeDriver(DockerDriverBase):
             ChromeOptions
         """
         options = ChromeOptions()
-        options.add_experimental_option(
-            'prefs', {'profile.managed_default_content_settings.images': 2})
         args = list(self.DEFAULT_ARGUMENTS)
+
+        if self.Flags.X_IMG & self.flags:
+            options.add_experimental_option(
+                'prefs', {
+                    'profile.managed_default_content_settings.images': 2
+                })
+
+        if self.Flags.X_3D & self.flags:
+            args.extend([
+                '--disable-3d-apis',
+                '--disable-flash-3d'])
+
+        if self.Flags.X_OFFERS & self.flags:
+            args.extend([
+                '--disable-offer-store-unmasked-wallet-cards',
+                '--disable-offer-upload-credit-cards',
+                '--disable-translate'])
+
         args.extend(arguments)
         for arg in args:
             options.add_argument(arg)
