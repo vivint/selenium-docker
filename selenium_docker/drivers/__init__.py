@@ -10,10 +10,11 @@ import logging
 import tarfile
 from abc import abstractmethod
 from datetime import datetime
+from functools import wraps
 
 import requests
 from aenum import Flag
-from docker.errors import DockerException
+from docker.errors import DockerException, APIError
 from dotmap import DotMap
 from selenium.webdriver import Remote
 from selenium.webdriver.common.proxy import Proxy
@@ -22,8 +23,41 @@ from tenacity import retry, stop_after_delay, wait_fixed
 from toolz.functoolz import juxt
 
 from selenium_docker.meta import config
-from selenium_docker.base import ContainerFactory, check_container
+from selenium_docker.base import ContainerFactory
 from selenium_docker.utils import ip_port, ref_counter, parse_metadata
+
+
+def check_container(fn):
+    """ Ensure we're not trying to double up an external container
+        with a Python instance that already has one. This would create
+        dangling containers that may not get stopped programmatically.
+
+        Note:
+            This method is placed under ``base`` to prevent circular imports.
+    """
+    @wraps(fn)
+    def inner(self, *args, **kwargs):
+        # check the instance
+        self.logger.debug('checking container before creation')
+        if self.factory is None:
+            raise DockerException('no docker client defined as factory')
+        if getattr(self, 'container', None) is not None:
+            raise DockerException(
+                'container already exists for this driver instance (%s)' %
+                self.container.name)
+        # check the specification
+        if self.CONTAINER is None:
+            raise DockerException('cannot create container without definition')
+        # check the docker connection
+        try:
+            self.factory.docker.ping()
+        except APIError as e:
+            self.logger.exception(e, exc_info=True)
+            raise e
+        else:
+            self.logger.debug('checking passed')
+            return fn(self, *args, **kwargs)
+    return inner
 
 
 class DockerDriverMeta(type):
@@ -144,7 +178,7 @@ class DockerDriverBase(Remote):
     def quit(self):
         """ Alias for :func:`.close_container`.
 
-        Generally this is called in a Selenium test when you want to
+        Generally this is called in a Selenium tests when you want to
         completely close and quit the active browser.
 
         Returns:

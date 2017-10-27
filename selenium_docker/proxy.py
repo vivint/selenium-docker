@@ -10,7 +10,8 @@ from docker import DockerClient
 from docker.models.containers import Container
 from selenium.webdriver.common.proxy import Proxy, ProxyType
 
-from selenium_docker.base import ContainerFactory, check_container
+from selenium_docker.base import ContainerFactory
+from selenium_docker.drivers import check_container
 from selenium_docker.utils import ip_port, gen_uuid, ref_counter
 
 

@@ -4,51 +4,18 @@
 #     vivint-selenium-docker, 2017
 # <<
 
-import time
 import logging
-from functools import partial, wraps
+import time
 from collections import Mapping
+from functools import partial
 
 import docker
 import gevent
-from six import string_types
 from docker.errors import APIError, DockerException, NotFound
 from docker.models.containers import Container
+from six import string_types
 
 from selenium_docker.utils import gen_uuid
-
-
-def check_container(fn):
-    """ Ensure we're not trying to double up an external container
-        with a Python instance that already has one. This would create
-        dangling containers that may not get stopped programmatically.
-
-        Note:
-            This method is placed under ``base`` to prevent circular imports.
-    """
-    @wraps(fn)
-    def inner(self, *args, **kwargs):
-        # check the instance
-        self.logger.debug('checking container before creation')
-        if self.factory is None:
-            raise DockerException('no docker client defined as factory')
-        if getattr(self, 'container', None) is not None:
-            raise DockerException(
-                'container already exists for this driver instance (%s)' %
-                self.container.name)
-        # check the specification
-        if self.CONTAINER is None:
-            raise DockerException('cannot create container without definition')
-        # check the docker connection
-        try:
-            self.factory.docker.ping()
-        except APIError as e:
-            self.logger.exception(e, exc_info=True)
-            raise e
-        else:
-            self.logger.debug('checking passed')
-            return fn(self, *args, **kwargs)
-    return inner
 
 
 class ContainerFactory(object):
