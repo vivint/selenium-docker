@@ -64,6 +64,14 @@ setup(
     include_package_data=True,
     platforms=['any'],
     install_requires=list(requirements),
+    extras_require={
+        'dev': [
+            'pytest',
+            'sphinx',
+            'sphinx-rtd-theme',
+            'tox'
+        ]
+    },
     cmdclass={
         'test': RunTests
     },
