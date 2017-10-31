@@ -1,7 +1,7 @@
 NAME := selenium-docker
 PYPI_REPO ?= vivint
 
-all: build test
+all: build docs test
 
 build: build_chrome build_firefox
 
@@ -12,6 +12,9 @@ build_chrome:
 build_firefox:
 	cd ./dockerfiles/standalone-firefox-ffmpeg && \
 	docker build -t standalone-firefix-ffmpeg:dev .
+
+docs:
+	$(MAKE) -C docs html
 
 pypi:
 	python setup.py sdist upload -r $(PYPI_REPO)
@@ -24,5 +27,6 @@ test:
 	build \
 	build_chrome \
 	build_firefox \
+	docs \
 	pypi \
 	test
