@@ -154,7 +154,30 @@ class DriverPool(object):
             raise DriverPoolRuntimeException(
                 'unable to fulfill required concurrent drivers')
 
+    def add_async(self, items):
+        """ Add additional items to the asynchronous processing queue.
+
+        Args:
+            items (list(Any)): list of items that need processing. Each item is
+                applied one at a time to an available driver from the pool.
+
+        Raises:
+            StopIteration: when all items have been added.
+        """
+        if not items:
+            raise DriverPoolValueError(
+                'cannot add items with value: %s' % str(items))
+        item_count = count(items)
+        self.logger.debug('adding %d additional items to tasks', item_count)
+        for o in items:
+            self._tasks.put(o)
+
     def close(self):
+        """ Force close all the drivers and cleanup their containers.
+
+        Returns:
+            None
+        """
         self.__cleanup(force=True)
 
     def execute(self, fn, items, preserve_order=False, auto_clean=True,
@@ -208,37 +231,6 @@ class DriverPool(object):
         if auto_clean:
             self.__cleanup()
 
-    def stop_async(self, timeout=None, auto_clean=True):
-        """ Stop all the async worker processing from executing.
-
-        Args:
-            timeout (float): number of seconds to wait for pool to finish
-                processing before killing and closing out the execution.
-            auto_clean (bool): cleanup docker containers after executing. If
-                multiple processing tasks are going to be used, it's more
-                performant to leave the containers running and reuse them.
-        Yields:
-            results: one result at a time, all that have been finished up
-                until this point.
-
-        Raises:
-            StopIteration: after all results have been yielded to the caller.
-        """
-        self.logger.debug('stopping async processing')
-        self._processing = False
-        self.logger.debug('killing async feeder thread')
-        if self.__feeder_green:
-            gevent.kill(self.__feeder_green)
-            self.__feeder_green = None
-        self.logger.debug('joining async pool before kill')
-        if self._pool:
-            self._pool.join(timeout=timeout or 1.0)
-            self._pool.kill(block=True)
-        if auto_clean:
-            self.close()
-        tasks_count = self._tasks.qsize()
-        self.logger.info('%d tasks remained unprocessed', tasks_count)
-
     def execute_async(self, fn, items=None, callback=None):
         """ Execute a fixed function in the background, streaming results.
 
@@ -250,6 +242,10 @@ class DriverPool(object):
             callback (Callable): function that takes a single parameter, the
                 return value of ``fn`` when its finished processing and has
                 returned the driver to the queue.
+
+        Raises:
+            DriverPoolValueError: if ``callback`` is not ``None``
+                or ``callable``.
 
         Returns:
             None
@@ -294,24 +290,6 @@ class DriverPool(object):
             self.__feeder_green = gevent.spawn(feeder)
         self.add_async(items)
 
-    def add_async(self, items):
-        """ Add additional items to the asynchronous processing queue.
-
-        Args:
-            items (list(Any)): list of items that need processing. Each item is
-                applied one at a time to an available driver from the pool.
-
-        Raises:
-            StopIteration: when all items have been added.
-        """
-        if not items:
-            raise DriverPoolValueError(
-                'cannot add items with value: %s' % str(items))
-        item_count = count(items)
-        self.logger.debug('adding %d additional items to tasks', item_count)
-        for o in items:
-            self._tasks.put(o)
-
     def results(self, block=True):
         """ Iterate over available results from processed tasks.
 
@@ -343,3 +321,34 @@ class DriverPool(object):
             self._results.put(StopIteration)
             for result in self._results:
                 yield result
+
+    def stop_async(self, timeout=None, auto_clean=True):
+        """ Stop all the async worker processing from executing.
+
+        Args:
+            timeout (float): number of seconds to wait for pool to finish
+                processing before killing and closing out the execution.
+            auto_clean (bool): cleanup docker containers after executing. If
+                multiple processing tasks are going to be used, it's more
+                performant to leave the containers running and reuse them.
+        Yields:
+            results: one result at a time, all that have been finished up
+                until this point.
+
+        Raises:
+            StopIteration: after all results have been yielded to the caller.
+        """
+        self.logger.debug('stopping async processing')
+        self._processing = False
+        self.logger.debug('killing async feeder thread')
+        if self.__feeder_green:
+            gevent.kill(self.__feeder_green)
+            self.__feeder_green = None
+        self.logger.debug('joining async pool before kill')
+        if self._pool:
+            self._pool.join(timeout=timeout or 1.0)
+            self._pool.kill(block=True)
+        if auto_clean:
+            self.close()
+        tasks_count = self._tasks.qsize()
+        self.logger.info('%d tasks remained unprocessed', tasks_count)

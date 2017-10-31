@@ -48,15 +48,6 @@ class SquidProxy(ContainerInterface, AbstractProxy):
         conn, port = ip_port(self.container, self.SQUID_PORT)
         self.selenium_proxy = self.make_proxy(conn, port)
 
-    def quit(self):
-        """ Alias for :func:`DockerDriverBase.close_container`.
-
-        Returns:
-            None
-        """
-        self.logger.debug('proxy quit')
-        self.close_container()
-
     @check_container
     def _make_container(self):
         """ Create a running container on the given Docker engine.
@@ -108,3 +99,12 @@ class SquidProxy(ContainerInterface, AbstractProxy):
             'socksPassword': socks.get('password')
         })
         return proxy
+
+    def quit(self):
+        """ Alias for :func:`DockerDriverBase.close_container`.
+
+        Returns:
+            None
+        """
+        self.logger.debug('proxy quit')
+        self.close_container()

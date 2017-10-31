@@ -91,6 +91,11 @@ class DockerDriverBase(ContainerInterface, Remote):
     definition is passed to the Docker Engine and is responsible for defining
     resources and metadata."""
 
+    DEFAULT_ARGUMENTS = None
+    """list: default arguments to apply to the WebDriver binary inside the
+    Docker container at startup. This can be used for changing the user agent
+    or turning off advanced features."""
+
     IMPLICIT_WAIT_SECONDS = 10.0
     """float: this can only be called once per WebDriver instance. The 
     value here is applied at the end of ``__init__`` to prevent the WebDriver
@@ -100,11 +105,6 @@ class DockerDriverBase(ContainerInterface, Remote):
     """str: identifier for extracting the host port that's bound to Docker's
     internal port for the underlying container. This string is in the format
     ``PORT/PROTOCOL``."""
-
-    DEFAULT_ARGUMENTS = None
-    """list: default arguments to apply to the WebDriver binary inside the
-    Docker container at startup. This can be used for changing the user agent
-    or turning off advanced features."""
 
     class Flags(Flag):
         """ Default bit flags to enable or disable all extra features. """
@@ -211,17 +211,13 @@ class DockerDriverBase(ContainerInterface, Remote):
         """str: read-only property of the container's name. """
         return self._name
 
-    def quit(self):
-        """ Alias for :func:`DockerDriverBase.close_container`.
+    @abstractmethod
+    def _capabilities(self, arguments, extensions, proxy, user_agent):
+        raise NotImplementedError
 
-        Generally this is called in a Selenium tests when you want to
-        completely close and quit the active browser.
-
-        Returns:
-            None
-        """
-        self.logger.debug('browser quit')
-        self.close_container()
+    @abstractmethod
+    def _profile(self, arguments, extensions, proxy, user_agent):
+        raise NotImplementedError
 
     def close_container(self):
         """ Removes the running container from the connected engine via
@@ -235,6 +231,69 @@ class DockerDriverBase(ContainerInterface, Remote):
             return
         self.logger.debug('closing and removing container')
         self.factory.stop_container(name=self.name)
+
+    @check_container
+    def _make_container(self, **kwargs):
+        """ Create a running container on the given Docker engine.
+
+        This container will contain the Selenium runtime, and ideally a
+        browser instance to connect with.
+
+        Args:
+            **kwargs (dict): the specification of the docker container.
+
+        Returns:
+            :class:`~docker.models.containers.Container`
+        """
+        # ensure we don't already have a container created for this instance
+        if self.container:
+            self.logger.debug('container already running, returning')
+            return self.container
+        self.logger.debug('creating container')
+        return self.factory.start_container(self.CONTAINER, **kwargs)
+
+    def _perform_check_container_ready(self):
+        """ Checks if the container is ready to use by calling a separate
+        function. This function ``check_container_ready`` must manage its
+        own retry logic if the check is to be performed more than once or over
+        a span of time.
+
+        Raises:
+            :exc:`~docker.errors.DockerException`: when the container's
+                creation and state cannot be verified.
+
+        Returns:
+            bool:
+                ``True`` when ``check_container_ready()`` returns ``True``.
+        """
+        self.logger.debug('waiting for selenium to initialize')
+        is_ready = self.check_container_ready()
+        if not is_ready:
+            raise DockerException('could not verify container was ready')
+        self.logger.debug('container created successfully')
+        return is_ready
+
+    @retry(wait=wait_fixed(0.5), stop=stop_after_delay(10))
+    def check_container_ready(self):
+        """ Function that continuously checks if a container is ready.
+
+        Note:
+            This function should be wrapped in a `tenacity.retry` for
+            continuously checking the status without failing.
+
+        Raises:
+            requests.RequestException: for any `requests` related exception.
+
+        Returns:
+            bool:
+                ``True`` when the status is good. ``False`` if it cannot
+                be verified or is in an unusable state.
+        """
+        self.logger.debug('checking selenium status')
+        resp = requests.get(self._base_url, timeout=(1.0, 1.0))
+        # retry on every exception
+        resp.raise_for_status()
+        return resp.status_code == requests.codes.ok
 
     def f(self, flag):
         """ Helper function for checking if we included a flag.
@@ -260,57 +319,6 @@ class DockerDriverBase(ContainerInterface, Remote):
         """
         return flag & self.flags
 
-    @abstractmethod
-    def _capabilities(self, arguments, extensions, proxy, user_agent):
-        raise NotImplementedError
-
-    @abstractmethod
-    def _profile(self, arguments, extensions, proxy, user_agent):
-        raise NotImplementedError
-
-    @retry(wait=wait_fixed(0.5), stop=stop_after_delay(10))
-    def check_container_ready(self):
-        """ Function that continuously checks if a container is ready.
-
-        Note:
-            This function should be wrapped in a `tenacity.retry` for
-            continuously checking the status without failing.
-
-        Raises:
-            requests.RequestException: for any `requests` related exception.
-
-        Returns:
-            bool:
-                ``True`` when the status is good. ``False`` if it cannot
-                be verified or is in an unusable state.
-        """
-        self.logger.debug('checking selenium status')
-        resp = requests.get(self._base_url, timeout=(1.0, 1.0))
-        # retry on every exception
-        resp.raise_for_status()
-        return resp.status_code == requests.codes.ok
-
-    def _perform_check_container_ready(self):
-        """ Checks if the container is ready to use by calling a separate
-        function. This function ``check_container_ready`` must manage its
-        own retry logic if the check is to be performed more than once or over
-        a span of time.
-
-        Raises:
-            :exc:`~docker.errors.DockerException`: when the container's
-                creation and state cannot be verified.
-
-        Returns:
-            bool:
-                ``True`` when ``check_container_ready()`` returns ``True``.
-        """
-        self.logger.debug('waiting for selenium to initialize')
-        is_ready = self.check_container_ready()
-        if not is_ready:
-            raise DockerException('could not verify container was ready')
-        self.logger.debug('container created successfully')
-        return is_ready
-
     def get_url(self):
         """ Extract the hostname and port from a running docker container,
         return it as a URL-string we can connect to.
@@ -325,25 +333,17 @@ class DockerDriverBase(ContainerInterface, Remote):
         base_url = self.BASE_URL.format(host=host, port=port)
         return base_url
 
-    @check_container
-    def _make_container(self, **kwargs):
-        """ Create a running container on the given Docker engine.
+    def quit(self):
+        """ Alias for :func:`DockerDriverBase.close_container`.
 
-        This container will contain the Selenium runtime, and ideally a
-        browser instance to connect with.
-
-        Args:
-            **kwargs (dict): the specification of the docker container.
+        Generally this is called in a Selenium tests when you want to
+        completely close and quit the active browser.
 
         Returns:
-            :class:`~docker.models.containers.Container`
+            None
         """
-        # ensure we don't already have a container created for this instance
-        if self.container:
-            self.logger.debug('container already running, returning')
-            return self.container
-        self.logger.debug('creating container')
-        return self.factory.start_container(self.CONTAINER, **kwargs)
+        self.logger.debug('browser quit')
+        self.close_container()
 
 
 class VideoDriver(DockerDriverBase):
@@ -406,6 +406,47 @@ class VideoDriver(DockerDriverBase):
             self.stop_recording(self.save_path)
         super(VideoDriver, self).quit()
 
+    def start_recording(self, metadata=None, environment=None):
+        """ Starts the ffmpeg video recording inside the container.
+
+        Args:
+            metadata (dict): arbitrary data to attach to the video file.
+            environment (dict): environment variables to inject inside the
+                running container before launching ffmpeg.
+
+        Returns:
+            str:
+                the absolute file path of the file being recorded, inside the
+                Docker container.
+        """
+        if self.__is_recording:
+            raise RuntimeError(
+                'already recording, cannot start recording again')
+
+        if not metadata:
+            metadata = {}
+
+        self.__is_recording = True
+
+        for s, v in [
+            ('title', self.filename),
+            ('language', 'English'),
+            ('encoded_by', 'docker+ffmpeg'),
+            ('description',
+             getattr(self, 'DESCRIPTION', config.ffmpeg_description))]:
+            metadata.setdefault(s, v)
+
+        cmd = self.commands.start_ffmpeg.format(
+            resolution=config.ffmpeg_resolution,
+            fps=config.ffmpeg_fps,
+            metadata=parse_metadata(metadata),
+            filename=self.__recording_path)
+        self.logger.debug(
+            'starting recording to file %s', self.__recording_path)
+        self.logger.debug('cmd: %s', cmd)
+        self.container.exec_run(cmd, environment=environment, detach=True)
+        return self.__recording_path
+
     def stop_recording(self, path, shard_by_date=True, environment=None):
         """ Stops the ffmpeg video recording inside the container.
 
@@ -467,44 +508,3 @@ class VideoDriver(DockerDriverBase):
         os.unlink(tar_dest)
         self.__is_recording = False
         return destination
-
-    def start_recording(self, metadata=None, environment=None):
-        """ Starts the ffmpeg video recording inside the container.
-
-        Args:
-            metadata (dict): arbitrary data to attach to the video file.
-            environment (dict): environment variables to inject inside the
-                running container before launching ffmpeg.
-
-        Returns:
-            str:
-                the absolute file path of the file being recorded, inside the
-                Docker container.
-        """
-        if self.__is_recording:
-            raise RuntimeError(
-                'already recording, cannot start recording again')
-
-        if not metadata:
-            metadata = {}
-
-        self.__is_recording = True
-
-        for s, v in [
-            ('title', self.filename),
-            ('language', 'English'),
-            ('encoded_by', 'docker+ffmpeg'),
-            ('description',
-             getattr(self, 'DESCRIPTION', config.ffmpeg_description))]:
-            metadata.setdefault(s, v)
-
-        cmd = self.commands.start_ffmpeg.format(
-            resolution=config.ffmpeg_resolution,
-            fps=config.ffmpeg_fps,
-            metadata=parse_metadata(metadata),
-            filename=self.__recording_path)
-        self.logger.debug(
-            'starting recording to file %s', self.__recording_path)
-        self.logger.debug('cmd: %s', cmd)
-        self.container.exec_run(cmd, environment=environment, detach=True)
-        return self.__recording_path

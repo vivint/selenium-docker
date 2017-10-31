@@ -157,6 +157,60 @@ class ContainerFactory(object):
         """
         return self._ns
 
+    def __bootstrap(self, container, **kwargs):
+        """ Adds additional attributes and functions to Container instance.
+
+        Args:
+            container (Container): instance of
+                :obj:`~docker.models.containers.Container` that is being
+                fixed up with expected values.
+            kwargs (dict): arbitrary attribute names and their values to
+                attach to the ``container`` instance.
+
+        Returns:
+            :obj:`~docker.models.containers.Container`:
+                the exact instance passed in.
+        """
+        self.logger.debug('bootstrapping container instance to factory')
+        c = container
+        for k, v in kwargs.items():
+            setattr(c, k, v)
+        c.started = time.time()
+        c.logger = logging.getLogger('%s.%s' % (__name__, kwargs.get('name')))
+        c.ns = self._ns
+        return c
+
+    def as_json(self):
+        """ JSON representation of our factory metadata.
+
+        Returns:
+            dict:
+                that is a :py:func:`json.dumps` compatible dictionary instance.
+        """
+        return {
+            '_ref': str(self),
+            'count': len(self.containers)
+        }
+
+    def gen_name(self, key=None):
+        """ Generate the name of a new container we want to run.
+
+        This method is used to keep names consistent as well as to ensure
+        the name/identity of the ``ContainerFactory`` is included. When a
+        ``ContainerFactory`` is loaded on a machine with containers already
+        running with its name it'll inherit those instances to re-manage
+        between application runs.
+
+        Args:
+            key (str): the identifiable portion of a container name. If one
+                isn't supplied (the default) then one is randomly generated.
+
+        Returns:
+            str:
+                in the format of ``selenium-<FACTORY_NAMESPACE>-<KEY>``.
+        """
+        return 'selenium-%s-%s' % (self._ns, key or gen_uuid(6))
+
     @classmethod
     def get_default_factory(cls, namespace=None, logger=None):
         """ Creates a default connection to the local Docker engine.
@@ -204,60 +258,6 @@ class ContainerFactory(object):
             if namespace in c.name:
                 ret[c.name] = c
         return ret
-
-    def __bootstrap(self, container, **kwargs):
-        """ Adds additional attributes and functions to Container instance.
-
-        Args:
-            container (Container): instance of
-                :obj:`~docker.models.containers.Container` that is being
-                fixed up with expected values.
-            kwargs (dict): arbitrary attribute names and their values to
-                attach to the ``container`` instance.
-
-        Returns:
-            :obj:`~docker.models.containers.Container`:
-                the exact instance passed in.
-        """
-        self.logger.debug('bootstrapping container instance to factory')
-        c = container
-        for k, v in kwargs.items():
-            setattr(c, k, v)
-        c.started = time.time()
-        c.logger = logging.getLogger('%s.%s' % (__name__, kwargs.get('name')))
-        c.ns = self._ns
-        return c
-
-    def gen_name(self, key=None):
-        """ Generate the name of a new container we want to run.
-
-        This method is used to keep names consistent as well as to ensure
-        the name/identity of the ``ContainerFactory`` is included. When a
-        ``ContainerFactory`` is loaded on a machine with containers already
-        running with its name it'll inherit those instances to re-manage
-        between application runs.
-
-        Args:
-            key (str): the identifiable portion of a container name. If one
-                isn't supplied (the default) then one is randomly generated.
-
-        Returns:
-            str:
-                in the format of ``selenium-<FACTORY_NAMESPACE>-<KEY>``.
-        """
-        return 'selenium-%s-%s' % (self._ns, key or gen_uuid(6))
-
-    def as_json(self):
-        """ JSON representation of our factory metadata.
-
-        Returns:
-            dict:
-                that is a :py:func:`json.dumps` compatible dictionary instance.
-        """
-        return {
-            '_ref': str(self),
-            'count': len(self.containers)
-        }
 
     @check_engine
     def load_image(self, image, tag=None, insecure_registry=False,
@@ -309,6 +309,49 @@ class ContainerFactory(object):
             return fn()
 
     @check_engine
+    def scrub_containers(self, *labels):
+        """ Remove **all** containers that were dynamically created.
+
+        Args:
+            labels (str): labels to include in our search for finding
+                containers to scrub from the connected Docker engine.
+
+        Returns:
+            int: the number of containers stopped and removed.
+        """
+
+        def stop_remove(c):
+            try:
+                c.stop()
+                c.remove()
+            except NotFound:
+                self.logger.warning('could not find container %s', c.name)
+
+        total = 0
+        self.logger.debug('scrubbing all containers by library')
+        # attempt to stop all the containers normally
+        self.stop_all_containers()
+        labels = ['browser', 'dynamic'] + list(set(labels))
+        threads = []
+        found = set()
+        # now close all dangling containers
+        for label in labels:
+            containers = self.docker.containers.list(
+                filters={'label': label})
+            count = len(containers)
+            self.logger.debug(
+                'found %d dangling containers with label %s',
+                count, label)
+            total += count
+            for c in containers:
+                if c.name not in found:
+                    found.add(c.name)
+                    threads.append(gevent.spawn(stop_remove, c))
+        for t in reversed(threads):
+            t.join()
+        return total
+
+    @check_engine
     def start_container(self, spec, **kwargs):
         """ Creates and runs a new container defined by ``spec``.
 
@@ -355,6 +398,23 @@ class ContainerFactory(object):
         self._containers[name] = self.__bootstrap(container)
         self.logger.debug('started container %s', name)
         return container
+
+    @check_engine
+    def stop_all_containers(self):
+        """ Remove all containers from this namespace.
+
+        Raises:
+            APIError: when there's a problem communicating with
+                the Docker Engine.
+            NotFound: when a tracked container cannot be found in
+                the Docker Engine.
+
+        Returns:
+            None
+        """
+        self.logger.debug('stopping all containers')
+        for name in self.containers.keys():
+            self.stop_container(name=name)
 
     @check_engine
     def stop_container(self, name=None, key=None, timeout=10):
@@ -407,63 +467,3 @@ class ContainerFactory(object):
             self.logger.error('could not stop container %s', container.name)
             self.logger.exception(e, exc_info=True)
             raise DockerError(e)
-
-    @check_engine
-    def stop_all_containers(self):
-        """ Remove all containers from this namespace.
-
-        Raises:
-            APIError: when there's a problem communicating with
-                the Docker Engine.
-            NotFound: when a tracked container cannot be found in
-                the Docker Engine.
-
-        Returns:
-            None
-        """
-        self.logger.debug('stopping all containers')
-        for name in self.containers.keys():
-            self.stop_container(name=name)
-
-    @check_engine
-    def scrub_containers(self, *labels):
-        """ Remove **all** containers that were dynamically created.
-
-        Args:
-            labels (str): labels to include in our search for finding
-                containers to scrub from the connected Docker engine.
-
-        Returns:
-            int: the number of containers stopped and removed.
-        """
-
-        def stop_remove(c):
-            try:
-                c.stop()
-                c.remove()
-            except NotFound:
-                self.logger.warning('could not find container %s', c.name)
-
-        total = 0
-        self.logger.debug('scrubbing all containers by library')
-        # attempt to stop all the containers normally
-        self.stop_all_containers()
-        labels = ['browser', 'dynamic'] + list(set(labels))
-        threads = []
-        found = set()
-        # now close all dangling containers
-        for label in labels:
-            containers = self.docker.containers.list(
-                filters={'label': label})
-            count = len(containers)
-            self.logger.debug(
-                'found %d dangling containers with label %s',
-                count, label)
-            total += count
-            for c in containers:
-                if c.name not in found:
-                    found.add(c.name)
-                    threads.append(gevent.spawn(stop_remove, c))
-        for t in reversed(threads):
-            t.join()
-        return total
