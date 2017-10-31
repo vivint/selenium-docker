@@ -78,7 +78,6 @@ Utils
    in_container
    ip_port
    load_docker_image
-   memoize
    parse_metadata
 
 .. automodule:: selenium_docker.utils
