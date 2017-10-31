@@ -19,11 +19,11 @@ from selenium_docker.utils import gen_uuid
 
 
 class DriverPoolRuntimeException(RuntimeError, SeleniumDockerException):
-    pass
+    """ Pool RunTime Exception. """
 
 
 class DriverPoolValueError(ValueError, SeleniumDockerException):
-    pass
+    """ Pool interaction ValueError. """
 
 
 class DriverPool(object):
@@ -31,13 +31,12 @@ class DriverPool(object):
 
     Args:
         size (int): maximum concurrent tasks.
-        driver_cls (:obj:`selenium.WebDriver`):
+        driver_cls (WebDriver):
         driver_cls_kw (dict):
         use_proxy (bool):
-        factory (:obj:`selenium_docker.base.ContainerFactory):
+        factory (:obj:`~selenium_docker.base.ContainerFactory`):
         name (str):
         logger (:obj:`logging.Logger`):
-
 
     Example::
 
@@ -57,6 +56,8 @@ class DriverPool(object):
 
         for result in pool.execute(get_title, urls):
             print(result)
+
+
 
     """
 

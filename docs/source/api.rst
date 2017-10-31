@@ -7,6 +7,9 @@ Base
 .. autoclass:: selenium_docker.base.ContainerFactory
    :members:
 
+.. autoclass:: selenium_docker.base.ContainerInterface
+   :members:
+
 .. autofunction:: selenium_docker.base.check_engine
 
 Drivers
@@ -24,6 +27,12 @@ Video Base
 ~~~~~~~~~~
 
 .. autoclass:: selenium_docker.drivers.VideoDriver
+   :members:
+
+Proxy
+~~~~~
+
+.. autoclass:: selenium_docker.proxy.SquidProxy
    :members:
 
 Chrome
@@ -71,7 +80,6 @@ Utils
    load_docker_image
    memoize
    parse_metadata
-   ref_counter
 
 .. automodule:: selenium_docker.utils
    :members:

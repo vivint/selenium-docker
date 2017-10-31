@@ -6,6 +6,7 @@
 
 import logging
 import time
+from abc import abstractmethod
 from collections import Mapping
 from functools import partial, wraps
 
@@ -49,6 +50,26 @@ def check_engine(fn):
             self.logger.debug('pass')
             return fn(self, *args, **kwargs)
     return inner
+
+
+class ContainerInterface(object):
+    """ Required functionality for implementing a custom object that has an
+    underlying container.
+    """
+
+    CONTAINER = None
+
+    @abstractmethod
+    def _make_container(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def close_container(self):
+        raise NotImplementedError
+
+    @abstractmethod
+    def quit(self):
+        raise NotImplementedError
 
 
 class ContainerFactory(object):

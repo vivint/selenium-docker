@@ -23,7 +23,7 @@ from tenacity import retry, stop_after_delay, wait_fixed
 from toolz.functoolz import juxt
 
 from selenium_docker.meta import config
-from selenium_docker.base import ContainerFactory
+from selenium_docker.base import ContainerFactory, ContainerInterface
 from selenium_docker.utils import ip_port, parse_metadata
 
 
@@ -72,7 +72,7 @@ class DockerDriverMeta(type):
 
 
 @add_metaclass(DockerDriverMeta)
-class DockerDriverBase(Remote):
+class DockerDriverBase(ContainerInterface, Remote):
     """ Base class for all drivers that want to implement Webdriver
     functionality that maps to a running Docker container.
     """
