@@ -21,4 +21,3 @@ class DockerError(DockerException, SeleniumDockerException):
 
 class SeleniumError(SeleniumDockerException):
     pass
-

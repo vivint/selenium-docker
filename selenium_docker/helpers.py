@@ -7,9 +7,8 @@
 import logging
 
 from aenum import Flag
-from selenium.webdriver.support import ui
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as expect
+from selenium.webdriver.support import expected_conditions as expect, ui
 
 from selenium_docker.errors import SeleniumError
 from selenium_docker.utils import memoize

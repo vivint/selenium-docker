@@ -8,7 +8,7 @@ from logging import getLogger
 
 import gevent
 from gevent.pool import Pool
-from gevent.queue import Queue, JoinableQueue
+from gevent.queue import JoinableQueue, Queue
 from toolz.itertoolz import count
 
 from selenium_docker.base import ContainerFactory
@@ -89,10 +89,10 @@ class DriverPool(object):
             self.proxy = None
 
         # deferred instantiation
-        self._pool = None           # type: Pool
-        self._results = None        # type: Queue
-        self._tasks = None          # type: JoinableQueue
-        self._processing = False    # type: bool
+        self._pool = None  # type: Pool
+        self._results = None  # type: Queue
+        self._tasks = None  # type: JoinableQueue
+        self._processing = False  # type: bool
         self.__feeder_green = None  # type: gevent.Greenlet
 
     @property
@@ -119,7 +119,7 @@ class DriverPool(object):
         if self._processing and not force:
             raise DriverPoolRuntimeException(
                 'cannot cleanup driver pool while executing')
-        squid = None    # type: gevent.Greenlet
+        squid = None  # type: gevent.Greenlet
         if self.proxy:
             self.logger.debug('closing squid proxy')
             squid = gevent.spawn(self.proxy.quit)
@@ -343,5 +343,3 @@ class DriverPool(object):
             self._results.put(StopIteration)
             for result in self._results:
                 yield result
-
-

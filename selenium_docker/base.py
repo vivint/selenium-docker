@@ -38,6 +38,7 @@ def check_engine(fn):
             #  if there's a problem with the Docker Engine connection.
             return True
     """
+
     @wraps(fn)
     def inner(self, *args, **kwargs):
         self.logger.debug('pinging docker engine')
@@ -49,6 +50,7 @@ def check_engine(fn):
         else:
             self.logger.debug('pass')
             return fn(self, *args, **kwargs)
+
     return inner
 
 
@@ -372,8 +374,8 @@ class ContainerFactory(object):
         Returns:
             None
         """
-        e = None            # type: Exception
-        container = None    # type: Container
+        e = None  # type: Exception
+        container = None  # type: Container
         if key and not name:
             name = self.gen_name(key=key)
         if not name:
@@ -434,6 +436,7 @@ class ContainerFactory(object):
         Returns:
             int: the number of containers stopped and removed.
         """
+
         def stop_remove(c):
             try:
                 c.stop()

@@ -5,14 +5,14 @@
 # <<
 
 import os
-import string
 import random
+import string
 import subprocess
 from functools import partial, wraps
 
 import gevent
-from six import PY2
 from dotmap import DotMap
+from six import PY2
 
 # compatibility
 if PY2:
@@ -127,7 +127,9 @@ def memoize(key):
             else:
                 ret = memo.setdefault(key, fn(*args))
             return ret
+
         return wrapped
+
     return inner
 
 

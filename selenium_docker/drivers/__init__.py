@@ -4,17 +4,17 @@
 #     vivint-selenium-docker, 2017
 # <<
 
-import os
-import time
 import logging
+import os
 import tarfile
+import time
 from abc import abstractmethod
 from datetime import datetime
 from functools import wraps
 
 import requests
 from aenum import Flag
-from docker.errors import DockerException, APIError
+from docker.errors import APIError, DockerException
 from dotmap import DotMap
 from selenium.webdriver import Remote
 from selenium.webdriver.common.proxy import Proxy
@@ -22,8 +22,8 @@ from six import add_metaclass
 from tenacity import retry, stop_after_delay, wait_fixed
 from toolz.functoolz import juxt
 
-from selenium_docker.meta import config
 from selenium_docker.base import ContainerFactory, ContainerInterface
+from selenium_docker.meta import config
 from selenium_docker.utils import ip_port, parse_metadata
 
 
@@ -41,6 +41,7 @@ def check_container(fn):
         Returns:
             Callable
     """
+
     @wraps(fn)
     def inner(self, *args, **kwargs):
         # check the instance
@@ -63,6 +64,7 @@ def check_container(fn):
         else:
             self.logger.debug('checking passed')
             return fn(self, *args, **kwargs)
+
     return inner
 
 
@@ -358,8 +360,8 @@ class VideoDriver(DockerDriverBase):
     """
 
     commands = DotMap(
-        stop_ffmpeg  = 'pkill ffmpeg',
-        start_ffmpeg = (
+        stop_ffmpeg='pkill ffmpeg',
+        start_ffmpeg=(
             'ffmpeg -y -f x11grab -s {resolution} -framerate {fps}'
             ' -i :99+0,0 {metadata} -qp 18 -c:v libx264'
             ' -preset ultrafast {filename}'))
@@ -489,11 +491,11 @@ class VideoDriver(DockerDriverBase):
         self.__is_recording = True
 
         for s, v in [
-                ('title', self.filename),
-                ('language', 'English'),
-                ('encoded_by', 'docker+ffmpeg'),
-                ('description',
-                    getattr(self, 'DESCRIPTION', config.ffmpeg_description))]:
+            ('title', self.filename),
+            ('language', 'English'),
+            ('encoded_by', 'docker+ffmpeg'),
+            ('description',
+             getattr(self, 'DESCRIPTION', config.ffmpeg_description))]:
             metadata.setdefault(s, v)
 
         cmd = self.commands.start_ffmpeg.format(
