@@ -20,7 +20,10 @@ class Flags(JsonFlags):
 
 
 class ChromeDriver(DockerDriverBase):
-    """ Chrome browser inside Docker. """
+    """ Chrome browser inside Docker.
+
+    Inherits from :obj:`~selenium_docker.drivers.DockerDriverBase`.
+    """
 
     BROWSER = 'Chrome'
     CONTAINER = dict(
@@ -51,24 +54,24 @@ class ChromeDriver(DockerDriverBase):
             user_agent (str):
 
         Returns:
-            ChromeOptions
+            dict
         """
         self.logger.debug('building capabilities')
         options = ChromeOptions()
         args = list(self.DEFAULT_ARGUMENTS)
 
-        if self._f(Flags.X_IMG):
+        if self.f(Flags.X_IMG):
             options.add_experimental_option(
                 'prefs', {
                     'profile.managed_default_content_settings.images': 2
                 })
 
-        if self._f(Flags.X_3D):
+        if self.f(Flags.X_3D):
             args.extend([
                 '--disable-3d-apis',
                 '--disable-flash-3d'])
 
-        if self._f(Flags.X_OFFERS):
+        if self.f(Flags.X_OFFERS):
             args.extend([
                 '--disable-offer-store-unmasked-wallet-cards',
                 '--disable-offer-upload-credit-cards',
@@ -93,6 +96,10 @@ class ChromeDriver(DockerDriverBase):
 
 
 class ChromeVideoDriver(VideoDriver, ChromeDriver):
+    """ Chrome browser inside Docker with video recording.
+
+    Inherits from :obj:`~selenium_docker.drivers.VideoDriver`.
+    """
     CONTAINER = dict(
         image='standalone-chrome-ffmpeg',
         detach=True,

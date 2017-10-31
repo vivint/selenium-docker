@@ -18,22 +18,46 @@ from selenium_docker.utils import gen_uuid
 
 
 class DriverPool(object):
-    
+    """ Create a pool of available Selenium containers for processing.
+
+    Args:
+        size (int): maximum concurrent tasks.
+        driver_cls (:obj:`selenium.WebDriver`):
+        driver_cls_kw (dict):
+        use_proxy (bool):
+        factory (:obj:`selenium_docker.base.ContainerFactory):
+        name (str):
+        logger (:obj:`logging.Logger`):
+
+
+    Example::
+
+        pool = DriverPool(size=2)
+
+        urls = [
+            'https://google.com',
+            'https://reddit.com',
+            'https://yahoo.com',
+            'http://ksl.com',
+            'http://cnn.com'
+        ]
+
+        def get_title(driver, url):
+            driver.get(url)
+            return driver.title
+
+        for result in pool.execute(get_title, urls):
+            print(result)
+
+    """
+
     INNER_THREAD_SLEEP = 0.5
-    
+    """float: essentially our polling interval between tasks and checking
+    when tasks have completed.
+    """
+
     def __init__(self, size, driver_cls=ChromeDriver, driver_cls_kw=None,
                  use_proxy=True, factory=None, name=None, logger=None):
-        """ Create a pool of available Selenium containers for processing.
-
-        Args:
-            size (int): maximum concurrent tasks.
-            driver_cls (:obj:`selenium.WebDriver`):
-            driver_cls_kw (dict):
-            use_proxy (bool):
-            factory (:obj:`selenium_docker.base.ContainerFactory):
-            name (str):
-            logger (:obj:`logging.Logger`):
-        """
         self.size = size
         self.name = name or gen_uuid(6)
         self.factory = factory or ContainerFactory.get_default_factory()

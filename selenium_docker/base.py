@@ -7,7 +7,7 @@
 import logging
 import time
 from collections import Mapping
-from functools import partial
+from functools import partial, wraps
 
 import docker
 import gevent
@@ -18,24 +18,81 @@ from six import string_types
 from selenium_docker.utils import gen_uuid
 
 
+def check_engine(fn):
+    """ Pre-check our engine connection by sending a ping before our
+    intended operation.
+
+    Args:
+        fn (Callable): wrapped function.
+
+    Returns:
+        Callable
+
+    Example::
+
+        @check_engine
+        def do_something_with_docker(self):
+            # will raise APIError before getting here
+            #  if there's a problem with the Docker Engine connection.
+            return True
+    """
+    @wraps(fn)
+    def inner(self, *args, **kwargs):
+        self.logger.debug('pinging docker engine')
+        try:
+            self.docker.ping()
+        except APIError as e:
+            self.logger.exception(e, exc_info=True)
+            raise e
+        else:
+            self.logger.debug('pass')
+            return fn(self, *args, **kwargs)
+    return inner
+
+
 class ContainerFactory(object):
+    """ Used as an interface for interacting with Container instances.
+
+    Example::
+
+        from selenium_docker.base import ContainerFactory
+
+        factory = ContainerFactory.get_default_factory('reusable')
+        factory.stop_all_containers()
+
+    Will attempt to connect to the local Docker Engine, including the word
+    ``reusable`` as part of each new container's name. Calling
+    ``factory.stop_all_containers()`` will stop and remove containers assocated
+    with that namespace.
+
+    Reusing the same ``namespace`` value will allow the factory to inherit
+    the correct containers from Docker when the program is reset.
+
+    Args:
+        engine (:obj:`docker.client.DockerClient`): connection to the
+            Docker Engine the application will interact with. If ``engine`` is
+            ``None`` then :func:`docker.client.from_env` will be called to
+            attempt connecting locally.
+        namespace (str): common name included in all the new docker containers
+            to allow tracking their status and cleaning up reliably.
+        make_default (bool): when ``True`` this instance will become the
+            default, used as a singleton, when requested via
+            :func:`~ContainerFactory.get_default_factory`.
+        logger (:obj:`logging.Logger`): logging module Logger instance.
+    """
+
     DEFAULT = None
     """:obj:`.ContainerFactory`: singleton instance to a container factory
     that can be used to spawn new containers accross a single connected
     Docker engine.
+    
+    This is the instance returned by 
+    :func:`~ContainerFactory.get_default_factory`. 
     """
 
     __slots__ = ('_containers', '_engine', '_ns', 'logger')
 
     def __init__(self, engine, namespace, make_default=True, logger=None):
-        """ Used as an interface for interacting with Container instances.
-
-        Args:
-            engine (DockerClient):
-            namespace (str):
-            make_default (bool):
-            logger (logging.Logger):
-        """
         self._containers = {}
         self._engine = engine or docker.from_env()
         self._ns = namespace or gen_uuid(10)
@@ -56,17 +113,24 @@ class ContainerFactory(object):
 
     @property
     def containers(self):
-        """dict: the tracked running containers mapped by name."""
+        """dict:
+            :obj:`~docker.models.containers.Container` instances
+            mapped by name.
+        """
         return self._containers
 
     @property
     def docker(self):
-        """DockerClient: reference to the connected Docker engine."""
+        """:obj:`docker.client.DockerClient`:
+            reference to the connected Docker engine.
+        """
         return self._engine
 
     @property
     def namespace(self):
-        """str: factory instance's namespace, used for generating names."""
+        """str: ready-only property for this instance's namespace,
+            used for generating names.
+        """
         return self._ns
 
     @classmethod
@@ -80,36 +144,40 @@ class ContainerFactory(object):
         accident.
 
         Note:
-            By default this method will attempt to connect to the LOCAL
+            By default this method will attempt to connect to the **local**
             Docker engine only. Do not use this when attempting to use
             a remote engine on a different machine.
 
         Args:
-            namespace (str):
+            namespace (str): use this namespace if we're creating a new
+                default factory instance.
             logger (:obj:`logging.Logger`): instance of logger to attach
                 to this factory instance.
 
         Returns:
-            :py:obj:`~selenium_docker.base.ContainerFactory`:
-                instance to interact with Docker engine.
+            :obj:`~.ContainerFactory`: instance to interact with Docker engine.
         """
         if cls.DEFAULT is None:
             cls(None, namespace, make_default=True, logger=logger)
         return cls.DEFAULT
 
-    def get_namespace_containers(self, ns):
+    @check_engine
+    def get_namespace_containers(self, namespace):
         """ Glean the running containers from the environment that are
         using our factory's namespace.
 
         Args:
-            ns (str):
+            namespace (str): word identifying ContainerFactory containers
+                represented in the Docker Engine.
 
         Returns:
-            dict: ``Container`` instances mapped by name.
+            dict:
+                :obj:`~docker.models.containers.Container` instances
+                mapped by name.
         """
         ret = {}
         for c in self.docker.containers.list():
-            if ns in c.name:
+            if namespace in c.name:
                 ret[c.name] = c
         return ret
 
@@ -124,7 +192,8 @@ class ContainerFactory(object):
                 attach to the ``container`` instance.
 
         Returns:
-            ``container``: the exact instance passed in.
+            :obj:`~docker.models.containers.Container`:
+                the exact instance passed in.
         """
         self.logger.debug('bootstrapping container instance to factory')
         c = container
@@ -136,23 +205,41 @@ class ContainerFactory(object):
         return c
 
     def gen_name(self, key=None):
+        """ Generate the name of a new container we want to run.
+
+        This method is used to keep names consistent as well as to ensure
+        the name/identity of the ``ContainerFactory`` is included. When a
+        ``ContainerFactory`` is loaded on a machine with containers already
+        running with its name it'll inherit those instances to re-manage
+        between application runs.
+
+        Args:
+            key (str): the identifiable portion of a container name. If one
+                isn't supplied (the default) then one is randomly generated.
+
+        Returns:
+            str:
+                in the format of ``selenium-<FACTORY_NAMESPACE>-<KEY>``.
+        """
         return 'selenium-%s-%s' % (self._ns, key or gen_uuid(6))
 
     def as_json(self):
         """ JSON representation of our factory metadata.
 
         Returns:
-            dict: `json.dumps` compatible dictionary instance.
+            dict:
+                that is a :py:func:`json.dumps` compatible dictionary instance.
         """
         return {
             '_ref': str(self),
             'count': len(self.containers)
         }
 
+    @check_engine
     def load_image(self, image, tag=None, insecure_registry=False,
                    background=False):
-        """ Issue a `docker pull` command before attempting to start/run
-        containers. This could potentially alliviate startup time, as well
+        """ Issue a ``docker pull`` command before attempting to start/run
+        containers. This could potentially increase startup time, as well
         as ensure the containers are up-to-date.
 
         Args:
@@ -163,13 +250,13 @@ class ContainerFactory(object):
             background (bool): spawn the download in a background thread.
 
         Raises:
-            DockerException: if anything goes wrong during the image
-                template download.
+            :exc:`docker.errors.DockerException`:
+                if anything goes wrong during the image template download.
 
         Returns:
-            :obj:`~docker.models.images.Image`: the Image controlled by
-                the connected Docker engine. Containers are spawned based
-                off this template.
+            :obj:`docker.models.images.Image`:
+                the Image controlled by the connected Docker engine.
+                Containers are spawned based off this template.
         """
         if tag is None:
             tag = ''
@@ -197,6 +284,7 @@ class ContainerFactory(object):
         else:
             return fn()
 
+    @check_engine
     def start_container(self, spec, **kwargs):
         """ Creates and runs a new container defined by ``spec``.
 
@@ -206,16 +294,17 @@ class ContainerFactory(object):
                 restart conditions, etc. The built-in driver containers
                 already have this defined in their class declaration.
             kwargs ([str, str]): additional arguments that will be added
-                to ``spec``; generally dynamic modifying a static
-                definition.
+                to ``spec``; generally dynamic attributes modifying a static
+                container definition.
 
         Raises:
-            DockerException: when there's any problem performing start and
-                run on the container we're attemping to create.
+            :exc:`docker.errors.DockerException`:
+                when there's any problem performing start and run on the
+                container we're attemping to create.
 
         Returns:
-            :obj:`~docker.models.containers.Container`: the newly created
-                and managed container instance.
+            :obj:`docker.models.containers.Container`:
+                the newly created and managed container instance.
         """
         if 'image' not in spec:
             raise DockerException('cannot create container without image')
@@ -243,6 +332,7 @@ class ContainerFactory(object):
         self.logger.debug('started container %s', name)
         return container
 
+    @check_engine
     def stop_container(self, name=None, key=None, timeout=10):
         """ Remove an individual container by name or key.
 
@@ -253,7 +343,7 @@ class ContainerFactory(object):
                 to a running container.
 
         Raises:
-            ValueError: when ``key`` and ``name`` are both None.
+            ValueError: when ``key`` and ``name`` are both ``None``.
             APIError: when there's a problem communicating with Docker engine.
             NotFound: when no such container by ``name`` exists.
 
@@ -294,8 +384,15 @@ class ContainerFactory(object):
             self.logger.exception(e, exc_info=True)
             raise e
 
+    @check_engine
     def stop_all_containers(self):
         """ Remove all containers from this namespace.
+
+        Raises:
+            APIError: when there's a problem communicating with
+                the Docker Engine.
+            NotFound: when a tracked container cannot be found in
+                the Docker Engine.
 
         Returns:
             None
@@ -304,11 +401,12 @@ class ContainerFactory(object):
         for name in self.containers.keys():
             self.stop_container(name=name)
 
+    @check_engine
     def scrub_containers(self, *labels):
-        """ Remove ALL containers that were dynamically created.
+        """ Remove **all** containers that were dynamically created.
 
         Args:
-            labels (*str): labels to include in our search for finding
+            labels (str): labels to include in our search for finding
                 containers to scrub from the connected Docker engine.
 
         Returns:

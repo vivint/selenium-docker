@@ -70,7 +70,9 @@ def ip_port(container, port):
         port (str):
 
     Returns:
-        (str, int)
+        tuple(str, int):
+            IP/hostname and port.
+
     """
     # make sure it's running, get the newest values
     port = str(port)
@@ -154,6 +156,9 @@ def parse_metadata(meta):
 
 def ref_counter(key, direction, callback_fn=None):
     """ Counts the references for a given key.
+
+    Warning:
+        This may be unnecessary with further improvements to Docker.
 
     Args:
         key (str):
