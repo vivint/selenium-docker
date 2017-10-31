@@ -17,6 +17,7 @@ from gevent.monkey import patch_socket
 from selenium_docker.drivers.chrome import ChromeDriver, ChromeVideoDriver
 from selenium_docker.drivers.firefox import FirefoxDriver, FirefoxVideoDriver
 
+from selenium_docker.errors import SeleniumDockerException
 from selenium_docker.helpers import JsonFlags
 from selenium_docker.meta import config
 from selenium_docker.pool import DriverPool
@@ -29,6 +30,7 @@ __all__ = [
     'FirefoxDriver',
     'FirefoxVideoDriver',
     'JsonFlags',
+    'SeleniumDockerException',
     'SquidProxy',
     'config'
 ]

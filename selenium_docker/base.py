@@ -15,6 +15,7 @@ from docker.errors import APIError, DockerException, NotFound
 from docker.models.containers import Container
 from six import string_types
 
+from selenium_docker.errors import DockerError, SeleniumDockerException
 from selenium_docker.utils import gen_uuid
 
 
@@ -41,7 +42,7 @@ def check_engine(fn):
         self.logger.debug('pinging docker engine')
         try:
             self.docker.ping()
-        except APIError as e:
+        except SeleniumDockerException as e:
             self.logger.exception(e, exc_info=True)
             raise e
         else:
@@ -367,7 +368,7 @@ class ContainerFactory(object):
                 return container
             except APIError as e:
                 self.logger.exception(e, exc_info=True)
-                raise e
+                raise DockerError(e)
         else:
             container = self.containers.pop(name)
         if e is not None:
@@ -382,7 +383,7 @@ class ContainerFactory(object):
         except APIError as e:
             self.logger.error('could not stop container %s', container.name)
             self.logger.exception(e, exc_info=True)
-            raise e
+            raise DockerError(e)
 
     @check_engine
     def stop_all_containers(self):

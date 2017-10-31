@@ -13,8 +13,17 @@ from toolz.itertoolz import count
 
 from selenium_docker.base import ContainerFactory
 from selenium_docker.drivers.chrome import ChromeDriver
+from selenium_docker.errors import SeleniumDockerException
 from selenium_docker.proxy import SquidProxy
 from selenium_docker.utils import gen_uuid
+
+
+class DriverPoolRuntimeException(RuntimeError, SeleniumDockerException):
+    pass
+
+
+class DriverPoolValueError(ValueError, SeleniumDockerException):
+    pass
 
 
 class DriverPool(object):
@@ -70,7 +79,7 @@ class DriverPool(object):
 
         # post init inspections
         if not hasattr(self._driver_cls, 'CONTAINER'):
-            raise ValueError('driver_cls must extend DockerDriver')
+            raise DriverPoolValueError('driver_cls must extend DockerDriver')
 
         # determine proxy usage
         if use_proxy:
@@ -93,7 +102,8 @@ class DriverPool(object):
     def __bootstrap(self):
         if self._processing:
             # cannot run two executions simultaneously
-            raise RuntimeError('cannot bootstrap pool, already running')
+            raise DriverPoolRuntimeException(
+                'cannot bootstrap pool, already running')
         if self._pool:
             self._pool.join(timeout=10.0)
             self._pool.kill()
@@ -106,7 +116,8 @@ class DriverPool(object):
 
     def __cleanup(self, force=False):
         if self._processing and not force:
-            raise RuntimeError('cannot cleanup driver pool while executing')
+            raise DriverPoolRuntimeException(
+                'cannot cleanup driver pool while executing')
         squid = None    # type: gevent.Greenlet
         if self.proxy:
             self.logger.debug('closing squid proxy')
@@ -139,7 +150,8 @@ class DriverPool(object):
         for t in reversed(threads):
             t.join()
         if not self._drivers.full():
-            raise RuntimeError('unable to fulfill required concurrent drivers')
+            raise DriverPoolRuntimeException(
+                'unable to fulfill required concurrent drivers')
 
     def close(self):
         self.__cleanup(force=True)
@@ -270,7 +282,8 @@ class DriverPool(object):
         if callback is None:
             callback = worker_cb
         if not callable(callback):
-            raise ValueError('cannot use %s, is not callable' % callback)
+            raise DriverPoolValueError(
+                'cannot use %s, is not callable' % callback)
 
         self.logger.debug('starting async processing')
         self.__bootstrap()
@@ -291,7 +304,8 @@ class DriverPool(object):
             StopIteration: when all items have been added.
         """
         if not items:
-            raise ValueError(items)
+            raise DriverPoolValueError(
+                'cannot add items with value: %s' % str(items))
         item_count = count(items)
         self.logger.debug('adding %d additional items to tasks', item_count)
         for o in items:

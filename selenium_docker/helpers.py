@@ -11,6 +11,7 @@ from selenium.webdriver.support import ui
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as expect
 
+from selenium_docker.errors import SeleniumError
 from selenium_docker.utils import memoize
 
 HTML_TAG = (By.TAG_NAME, 'html')
@@ -100,7 +101,7 @@ class OperationsMixin(object):
             wait.until(expect.frame_to_be_available_and_switch_to_it(selector))
             wait.until(expect.visibility_of(wait_for))
             el = self.find_element(*wait_for)
-        except Exception as e:
+        except SeleniumError as e:
             self._log.exception(e, exc_info=True)
             raise e
         return el
