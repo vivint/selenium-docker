@@ -7,11 +7,11 @@
 import logging
 
 from aenum import Flag
+from toolz.functoolz import memoize
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as expect, ui
 
 from selenium_docker.errors import SeleniumError
-from selenium_docker.utils import memoize
 
 HTML_TAG = (By.TAG_NAME, 'html')
 """(str, str): tuple representing an <HTML> tag."""
@@ -62,7 +62,7 @@ class OperationsMixin(object):
     """ Optional mixin object to extend default driver functionality. """
 
     @property
-    @memoize('ops_mixin_logger')
+    @memoize(key=lambda self: id(self))
     def _log(self):
         log = getattr(self, 'logger', None)
         if log and hasattr(log, 'exception'):

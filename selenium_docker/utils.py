@@ -108,31 +108,6 @@ def load_docker_image(_docker, image, tag=None, insecure_registry=False,
         return fn()
 
 
-def memoize(key):
-    """ Simple function caching.
-
-    Args:
-        key (str):
-
-    Returns:
-        Callable
-    """
-    memo = {}
-
-    def inner(fn):
-        @wraps(fn)
-        def wrapped(*args):
-            if key in memo:
-                ret = memo[key]
-            else:
-                ret = memo.setdefault(key, fn(*args))
-            return ret
-
-        return wrapped
-
-    return inner
-
-
 def parse_metadata(meta):
     """ Convert a dictionary into proper formatting for ffmpeg.
 
