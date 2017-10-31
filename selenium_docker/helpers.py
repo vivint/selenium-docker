@@ -22,17 +22,36 @@ class JsonFlags(Flag):
 
     @classmethod
     def as_json(cls):
-        """dict: returns JSON compatible dict. """
+        """ Converts the Flag enumeration to a JSON structure.
+
+        Returns:
+            dict(str, int):
+                Flag names and their corresponding integer-bit-value.
+        """
         return {str(k): v.value for k, v in cls.__members__.items()}
 
     @classmethod
     def from_values(cls, *values):
+        """ Creates a compound Flag instance.
+
+        Logically OR's the integer/string ``values`` and returns a bit-flag
+        that represents the features we want enabled in our Driver instance.
+
+        Args:
+            values (int or str): the integer-bit value or the flag name.
+
+        Returns:
+            :obj:`aenum.Flag`:
+                Compound Flag instance with the features we requested.
+        """
         ret = cls(0)
         for v in values:
             if isinstance(v, str):
                 x = cls.__members__.get(v)
             elif isinstance(v, int):
                 x = cls(v)
+            elif v is None:
+                continue
             else:
                 raise ValueError(v)
             ret = ret | x
@@ -72,8 +91,9 @@ class OperationsMixin(object):
             Exception; when anything goes wrong.
 
         Returns:
-            :obj:`~selenium.webdriver.remote.webelement.WebElement`: when
-                there were no exceptions and operation completed successfully.
+            :obj:`~selenium.webdriver.remote.webelement.WebElement`:
+                when there were no exceptions and the operation
+                completed successfully.
         """
         wait = ui.WebDriverWait(self, max_time, poll_frequency=0.25)
         try:

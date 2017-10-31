@@ -14,8 +14,6 @@ import gevent
 from six import PY2
 from dotmap import DotMap
 
-__references = {}
-
 # compatibility
 if PY2:
     _range = xrange
@@ -70,7 +68,9 @@ def ip_port(container, port):
         port (str):
 
     Returns:
-        (str, int)
+        tuple(str, int):
+            IP/hostname and port.
+
     """
     # make sure it's running, get the newest values
     port = str(port)
@@ -150,39 +150,3 @@ def parse_metadata(meta):
         text = '-metadata {key}="{value}"'.format(key=str(k).lower(), value=v)
         pieces.append(text)
     return ' '.join(pieces)
-
-
-def ref_counter(key, direction, callback_fn=None):
-    """ Counts the references for a given key.
-
-    Args:
-        key (str):
-        direction (int):
-        callback_fn (Callable):
-
-    Returns:
-        Callable
-    """
-    def inner(fn):
-        @wraps(fn)
-        def wrap(*args, **kwargs):
-            __references[inner.key] += inner.direction
-            ret_value = fn(*args, **kwargs)
-            if __references[inner.key] == 0:
-                inner.cb_fn(inner.key)
-            return ret_value
-        return wrap
-    __references.setdefault(key, 0)
-    inner.key = key
-    inner.direction = direction
-    inner.cb_fn = callback_fn or (lambda k: k)
-    return inner
-
-
-def references():
-    """ Read-only copy of the reference counter dictionary.
-
-    Returns:
-        dict
-    """
-    return dict(__references.items())

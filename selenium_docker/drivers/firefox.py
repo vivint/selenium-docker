@@ -19,7 +19,10 @@ class Flags(JsonFlags):
 
 
 class FirefoxDriver(DockerDriverBase):
-    """ Firefox browser inside Docker. """
+    """ Firefox browser inside Docker.
+
+    Inherits from :obj:`~selenium_docker.drivers.DockerDriverBase`.
+    """
 
     BROWSER = 'Firefox'
     CONTAINER = dict(
@@ -72,11 +75,11 @@ class FirefoxDriver(DockerDriverBase):
         profile = FirefoxProfile()
         args = list(self.DEFAULT_ARGUMENTS)
 
-        if self._f(Flags.X_IMG):
+        if self.f(Flags.X_IMG):
             args.append(
                 ('permissions.default.image', '2'))
 
-        if self._f(Flags.X_FLASH):
+        if self.f(Flags.X_FLASH):
             args.append(
                 ('dom.ipc.plugins.enabled.libflashplayer.so', 'false'))
 
@@ -92,6 +95,10 @@ class FirefoxDriver(DockerDriverBase):
 
 
 class FirefoxVideoDriver(VideoDriver, FirefoxDriver):
+    """ Firefox browser inside Docker with video recording.
+
+    Inherits from :obj:`~selenium_docker.drivers.VideoDriver`.
+    """
     CONTAINER = dict(
         image='standalone-firefox-ffmpeg',
         detach=True,

@@ -12,7 +12,7 @@ from selenium.webdriver.common.proxy import Proxy, ProxyType
 
 from selenium_docker.base import ContainerFactory
 from selenium_docker.drivers import check_container
-from selenium_docker.utils import ip_port, gen_uuid, ref_counter
+from selenium_docker.utils import ip_port, gen_uuid
 
 
 class AbstractProxy(object):
@@ -52,7 +52,6 @@ class SquidProxy(AbstractProxy):
         self.logger.debug('proxy quit')
         self.close_container()
 
-    @ref_counter('squid-container', +1)
     @check_container
     def _make_container(self):
         # type: (DockerClient) -> Container
@@ -63,7 +62,6 @@ class SquidProxy(AbstractProxy):
         c.reload()
         return c
 
-    @ref_counter('squid-container', -1)
     def close_container(self):
         self.factory.stop_container(name=self.name)
 

@@ -24,7 +24,7 @@ from toolz.functoolz import juxt
 
 from selenium_docker.meta import config
 from selenium_docker.base import ContainerFactory
-from selenium_docker.utils import ip_port, ref_counter, parse_metadata
+from selenium_docker.utils import ip_port, parse_metadata
 
 
 def check_container(fn):
@@ -34,6 +34,12 @@ def check_container(fn):
 
         Note:
             This method is placed under ``base`` to prevent circular imports.
+
+        Args:
+            fn (Callable): wrapped function.
+
+        Returns:
+            Callable
     """
     @wraps(fn)
     def inner(self, *args, **kwargs):
@@ -67,15 +73,39 @@ class DockerDriverMeta(type):
 
 @add_metaclass(DockerDriverMeta)
 class DockerDriverBase(Remote):
-    BASE_URL = 'http://{host}:{port}/wd/hub'    # type: str
-    BROWSER = 'Default'                         # type: str
-    CONTAINER = None                            # type: dict
-    IMPLICIT_WAIT_SECONDS = 10.0                # type: float
-    QUIT_TIMEOUT_SECONDS = 3.0                  # type: float
-    SELENIUM_PORT = '4444/tcp'                  # type: str
-    DEFAULT_ARGUMENTS = None                    # type: list
+    """ Base class for all drivers that want to implement Webdriver
+    functionality that maps to a running Docker container.
+    """
+
+    BASE_URL = 'http://{host}:{port}/wd/hub'
+    """str: connection URL used to bind with docker container."""
+
+    BROWSER = 'Default'
+    """str: name of the underlying browser being used. Classes that inhert
+    from :obj:`~.DockerDriverBase` should overwrite this attribute."""
+
+    CONTAINER = None
+    """dict: default specification for the underlying container. This 
+    definition is passed to the Docker Engine and is responsible for defining
+    resources and metadata."""
+
+    IMPLICIT_WAIT_SECONDS = 10.0
+    """float: this can only be called once per WebDriver instance. The 
+    value here is applied at the end of ``__init__`` to prevent the WebDriver
+    instance from hanging inside the container."""
+
+    SELENIUM_PORT = '4444/tcp'
+    """str: identifier for extracting the host port that's bound to Docker's
+    internal port for the underlying container. This string is in the format
+    ``PORT/PROTOCOL``."""
+
+    DEFAULT_ARGUMENTS = None
+    """list: default arguments to apply to the WebDriver binary inside the
+    Docker container at startup. This can be used for changing the user agent
+    or turning off advanced features."""
 
     class Flags(Flag):
+        """ Default bit flags to enable or disable all extra features. """
         DISABLED = 0
         ALL = 1
 
@@ -88,15 +118,18 @@ class DockerDriverBase(Remote):
                 user agent. If ``user_agent`` is a Callable then the result
                 will be used as the user agent string for this browser
                 instance.
-            proxy (Proxy,SquidProxy): Proxy (or SquidProxy) instance
+            proxy (Proxy or SquidProxy): Proxy (or SquidProxy) instance
                 that routes container traffic.
             cargs (list): container creation arguments.
             ckwargs (dict): container creation keyword arguments.
             extensions (list): list of file locations loaded as
                 browser extensions.
-            logger (Logger): logging module Logger instance.
+            logger (:obj:`~logging.Logger`): logging module Logger instance.
             factory (:obj:`~selenium_docker.base.ContainerFactory`):
-            flags (:obj:`aenum.Flag`):
+                abstract connection to a Docker Engine that does the primary
+                interaction with starting and stopping containers.
+            flags (:obj:`aenum.Flag`): bit flags used to turn advanced features
+                on or off.
 
         Raises:
             ValueError: when ``proxy`` is an unknown/invalid value.
@@ -116,7 +149,7 @@ class DockerDriverBase(Remote):
             '%s.%s.%s' % (__name__, self.identity, self.name))
 
         self.container = self._make_container(**ckwargs)
-        self._base_url = self._get_url()
+        self._base_url = self.get_url()
 
         # user_agent can also be a callable function to randomly select one
         #  at instantiation time
@@ -139,7 +172,8 @@ class DockerDriverBase(Remote):
 
         # build our web driver capabilities
         self.flags = self.Flags.DISABLED if not flags else flags
-        fn = juxt(self._capabilities, self._profile)
+        fn = juxt(self._capabilities,
+                  self._profile)
         capabilities, profile = fn(args, extensions, self._proxy, user_agent)
         try:
             # build our web driver
@@ -176,7 +210,7 @@ class DockerDriverBase(Remote):
         return self._name
 
     def quit(self):
-        """ Alias for :func:`.close_container`.
+        """ Alias for :func:`DockerDriverBase.close_container`.
 
         Generally this is called in a Selenium tests when you want to
         completely close and quit the active browser.
@@ -187,24 +221,40 @@ class DockerDriverBase(Remote):
         self.logger.debug('browser quit')
         self.close_container()
 
-    @ref_counter('docker-container', -1)
     def close_container(self):
-        """ Removes the running container from the connected engine.
+        """ Removes the running container from the connected engine via
+        :obj:`.DockerDriverBase.factory`.
 
         Returns:
             None
         """
+        if not self.container:
+            self.logger.warning('no container to stop')
+            return
         self.logger.debug('closing and removing container')
         self.factory.stop_container(name=self.name)
 
-    def _f(self, flag):
+    def f(self, flag):
         """ Helper function for checking if we included a flag.
 
         Args:
             flag (:obj:`aenum.Flag`): instance of ``Flag``.
 
         Returns:
-            bool
+            bool: logical AND on an individual flag and a bit-flag set.
+
+        Example::
+
+            from selenium_docker.drivers.chrome import ChromeDriver, Flags
+
+            driver = ChromeDriver(flags=Flags.ALL)
+            driver.get('https://python.org')
+
+            if driver.f(Flags.X_IMG):  # no images allowed
+                # do something
+                pass
+
+            driver.quit()
         """
         return flag & self.flags
 
@@ -224,8 +274,12 @@ class DockerDriverBase(Remote):
             This function should be wrapped in a `tenacity.retry` for
             continuously checking the status without failing.
 
+        Raises:
+            requests.RequestException: for any `requests` related exception.
+
         Returns:
-            bool: ``True`` when the status is good. ``False`` if it cannot
+            bool:
+                ``True`` when the status is good. ``False`` if it cannot
                 be verified or is in an unusable state.
         """
         self.logger.debug('checking selenium status')
@@ -235,15 +289,18 @@ class DockerDriverBase(Remote):
         return resp.status_code == requests.codes.ok
 
     def _perform_check_container_ready(self):
-        """ Checks if the container is ready to use by calling seperate
-        function.
+        """ Checks if the container is ready to use by calling a separate
+        function. This function ``check_container_ready`` must manage its
+        own retry logic if the check is to be performed more than once or over
+        a span of time.
 
         Raises:
             :exc:`~docker.errors.DockerException`: when the container's
                 creation and state cannot be verified.
 
         Returns:
-            bool
+            bool:
+                ``True`` when ``check_container_ready()`` returns ``True``.
         """
         self.logger.debug('waiting for selenium to initialize')
         is_ready = self.check_container_ready()
@@ -252,9 +309,12 @@ class DockerDriverBase(Remote):
         self.logger.debug('container created successfully')
         return is_ready
 
-    def _get_url(self):
+    def get_url(self):
         """ Extract the hostname and port from a running docker container,
         return it as a URL-string we can connect to.
+
+        References:
+            :func:`selenium_docker.utils.ip_port`
 
         Returns:
             str
@@ -263,7 +323,6 @@ class DockerDriverBase(Remote):
         base_url = self.BASE_URL.format(host=host, port=port)
         return base_url
 
-    @ref_counter('docker-container', +1)
     @check_container
     def _make_container(self, **kwargs):
         """ Create a running container on the given Docker engine.
@@ -278,12 +337,25 @@ class DockerDriverBase(Remote):
             :class:`~docker.models.containers.Container`
         """
         # ensure we don't already have a container created for this instance
+        if self.container:
+            self.logger.debug('container already running, returning')
+            return self.container
         self.logger.debug('creating container')
         return self.factory.start_container(self.CONTAINER, **kwargs)
 
 
 class VideoDriver(DockerDriverBase):
-    """ Chrome browser inside Docker with video recording of its lifetime. """
+    """ Chrome browser inside Docker with video recording of its lifetime.
+
+    Args:
+        path (str): directory where finished video recording should be stored.
+
+    Attributes:
+        save_path (str): directory to save video recording.
+        _time (int): time stamp of when the class was instatiated.
+        __is_recording (bool): flag for internal recording state.
+        __recording_path (str): Docker internal path for saved files.
+    """
 
     commands = DotMap(
         stop_ffmpeg  = 'pkill ffmpeg',
@@ -291,6 +363,14 @@ class VideoDriver(DockerDriverBase):
             'ffmpeg -y -f x11grab -s {resolution} -framerate {fps}'
             ' -i :99+0,0 {metadata} -qp 18 -c:v libx264'
             ' -preset ultrafast {filename}'))
+    """:obj:`dotmap.DotMap`: aliases for commands that run inside the docker
+    container for starting and stopping ffmpeg.
+    
+    Attributes:
+        start_ffmpeg: using X11 and LibX264.
+        stop_ffmpeg: killing the process will correctly stop video recording.
+    
+    """
 
     def __init__(self, path, *args, **kwargs):
         super(VideoDriver, self).__init__(*args, **kwargs)
@@ -307,10 +387,19 @@ class VideoDriver(DockerDriverBase):
 
     @property
     def filename(self):
-        """str: filename to apply to the extracted video stream."""
+        """str: filename to apply to the extracted video stream.
+
+        The filename will be formatted, ``<BROWSER>-docker-<TIMESTAMP>.mkv``.
+        """
         return ('%s-docker-%s.mkv' % (self.BROWSER, self._time)).lower()
 
     def quit(self):
+        """ Stop video recording before closing the driver instance and
+        removing the Docker container.
+
+        Returns:
+            None
+        """
         if self.__is_recording:
             self.stop_recording(self.save_path)
         super(VideoDriver, self).quit()
@@ -319,9 +408,12 @@ class VideoDriver(DockerDriverBase):
         """ Stops the ffmpeg video recording inside the container.
 
         Args:
-            path (str):
-            shard_by_date (bool):
-            environment (dict):
+            path (str): local directory where the video file should be stored.
+            shard_by_date (bool): when ``True`` video files will be placed
+                in a folder structure under ``path`` in the format of
+                ``YYYY/MM/DD/<files>``.
+            environment (dict): environment variables to inject inside the
+                container before executing the commands to stop recording.
 
         Raises:
             ValueError: when ``path`` is not an existing folder path.
@@ -329,7 +421,8 @@ class VideoDriver(DockerDriverBase):
                 recorded files.
 
         Returns:
-            str: file path to completed recording. This value is adjusted
+            str:
+                file path to completed recording. This value is adjusted
                 for ``shard_by_date``.
         """
         if not self.__is_recording:
@@ -382,7 +475,9 @@ class VideoDriver(DockerDriverBase):
                 running container before launching ffmpeg.
 
         Returns:
-            str: the absolute file path of the file being recorded.
+            str:
+                the absolute file path of the file being recorded, inside the
+                Docker container.
         """
         if self.__is_recording:
             raise RuntimeError(
