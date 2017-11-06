@@ -17,7 +17,7 @@ from six import PY2
 # compatibility
 if PY2:
     _range = xrange
-else:
+else:  # pragma: no cover
     _range = range
 
 
