@@ -4,6 +4,7 @@
 #     vivint-selenium-docker, 2017
 # <<
 
+import math
 from logging import getLogger
 
 import gevent
@@ -71,7 +72,6 @@ class DriverPool(object):
         self.size = size
         self.name = name or gen_uuid(6)
         self.factory = factory or ContainerFactory.get_default_factory()
-        # type: ContainerFactory
         self.logger = logger or getLogger('DriverPool.%s' % self.name)
 
         self._driver_cls = driver_cls
@@ -83,10 +83,8 @@ class DriverPool(object):
             raise DriverPoolValueError('driver_cls must extend DockerDriver')
 
         # determine proxy usage
-        if use_proxy:
-            self.proxy = SquidProxy(factory=self.factory)
-        else:
-            self.proxy = None
+        self._use_proxy = use_proxy
+        self.proxy = None
 
         # deferred instantiation
         self._pool = None  # type: Pool
@@ -101,22 +99,29 @@ class DriverPool(object):
         return self._processing
 
     def __bootstrap(self):
-        if self._processing:
+        if self.is_processing:
             # cannot run two executions simultaneously
             raise DriverPoolRuntimeException(
                 'cannot bootstrap pool, already running')
-        if self._pool:
+        if self._pool:  # pragma: no cover
+            self.logger.debug('killing processing pool')
             self._pool.join(timeout=10.0)
             self._pool.kill()
             self._pool = None
+        if self._use_proxy and not self.proxy:
+            self.logger.debug('bootstrapping squid proxy')
+            self.proxy = SquidProxy(factory=self.factory)
         self.logger.debug('bootstrapping pool processing')
         self._processing = True
         self._results = Queue()
         self._tasks = JoinableQueue()
         self._load_drivers()
+        if not self._pool:
+            self._pool = Pool(
+                size=self.size + math.ceil(self.size * 0.25))  # headroom
 
     def __cleanup(self, force=False):
-        if self._processing and not force:
+        if self.is_processing and not force:
             raise DriverPoolRuntimeException(
                 'cannot cleanup driver pool while executing')
         squid = None  # type: gevent.Greenlet
@@ -129,6 +134,7 @@ class DriverPool(object):
             d.quit()
         if self.proxy:
             squid.join()
+            self.proxy = None
 
     def _load_drivers(self):
         if not self._drivers.empty():
@@ -151,8 +157,10 @@ class DriverPool(object):
         for t in reversed(threads):
             t.join()
         if not self._drivers.full():
+            self.__cleanup(force=True)
             raise DriverPoolRuntimeException(
-                'unable to fulfill required concurrent drivers')
+                'unable to fulfill required concurrent drivers, %d of %d' % (
+                    self._drivers.qsize(), self.size))
 
     def add_async(self, items):
         """ Add additional items to the asynchronous processing queue.
@@ -215,20 +223,19 @@ class DriverPool(object):
 
         self.__bootstrap()
         self.logger.debug('starting sync processing')
-        pool = Pool(size=self.size + 3)  # headroom
-        if preserve_order:
-            ittr = pool.imap
-        else:
-            ittr = pool.imap_unordered
 
-        self._pool = pool
+        if preserve_order:
+            ittr = self._pool.imap
+        else:
+            ittr = self._pool.imap_unordered
+
         self.logger.debug('yielding processed results')
         for o in ittr(worker, enumerate(items)):
             yield o
-
         self.logger.debug('stopping sync processing')
         self._processing = False
         if auto_clean:
+            self.logger.debug('auto cleanup pool environment')
             self.__cleanup()
 
     def execute_async(self, fn, items=None, callback=None):
@@ -278,17 +285,28 @@ class DriverPool(object):
 
         if callback is None:
             callback = worker_cb
-        if not callable(callback):
-            raise DriverPoolValueError(
-                'cannot use %s, is not callable' % callback)
+
+        for f in [fn, callback]:
+            if not callable(f):
+                raise DriverPoolValueError(
+                    'cannot use %s, is not callable' % callback)
 
         self.logger.debug('starting async processing')
         self.__bootstrap()
-        if not self._pool:
-            self._pool = Pool(size=self.size)
         if not self.__feeder_green:
             self.__feeder_green = gevent.spawn(feeder)
-        self.add_async(items)
+        if items:
+            self.add_async(items)
+
+    def quit(self):
+        """ Alias for :func:`~DriverPool.close()`. Included for consistency
+        with driver instances that generally call ``quit`` when they're no
+        longer needed.
+
+        Returns:
+            None
+        """
+        return self.close()
 
     def results(self, block=True):
         """ Iterate over available results from processed tasks.
@@ -310,7 +328,7 @@ class DriverPool(object):
         if block:
             self.logger.debug('blocking for results to finish processing')
             while (not self._tasks.empty() and not self._results.empty()) \
-                    or self._processing:
+                    or self.is_processing:
                 while not self._results.empty():
                     yield self._results.get()
                 gevent.sleep(self.INNER_THREAD_SLEEP)
@@ -349,6 +367,7 @@ class DriverPool(object):
             self._pool.join(timeout=timeout or 1.0)
             self._pool.kill(block=True)
         if auto_clean:
+            self.logger.debug('auto cleanup pool environment')
             self.close()
         tasks_count = self._tasks.qsize()
         self.logger.info('%d tasks remained unprocessed', tasks_count)
