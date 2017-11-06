@@ -11,4 +11,7 @@ from selenium_docker.base import ContainerFactory
 
 @pytest.fixture(scope='module')
 def factory():
-    return ContainerFactory.get_default_factory('unittests')
+    f = ContainerFactory.get_default_factory('unittests')
+    f.scrub_containers()
+    yield f
+    f.stop_all_containers()
