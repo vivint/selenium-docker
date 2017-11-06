@@ -7,7 +7,6 @@
 import random
 
 import pytest
-import gevent
 from docker.errors import ImageNotFound
 
 from selenium_docker.base import ContainerFactory
