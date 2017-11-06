@@ -207,7 +207,6 @@ class DockerDriverBase(ContainerInterface, Remote):
 
     @property
     def name(self):
-        # type: () -> str
         """str: read-only property of the container's name. """
         return self._name
 
@@ -218,19 +217,6 @@ class DockerDriverBase(ContainerInterface, Remote):
     @abstractmethod
     def _profile(self, arguments, extensions, proxy, user_agent):
         raise NotImplementedError
-
-    def close_container(self):
-        """ Removes the running container from the connected engine via
-        :obj:`.DockerDriverBase.factory`.
-
-        Returns:
-            None
-        """
-        if not self.container:
-            self.logger.warning('no container to stop')
-            return
-        self.logger.debug('closing and removing container')
-        self.factory.stop_container(name=self.name)
 
     @check_container
     def _make_container(self, **kwargs):
@@ -246,7 +232,7 @@ class DockerDriverBase(ContainerInterface, Remote):
             :class:`~docker.models.containers.Container`
         """
         # ensure we don't already have a container created for this instance
-        if self.container:
+        if hasattr(self, 'container') and self.container:
             self.logger.debug('container already running, returning')
             return self.container
         self.logger.debug('creating container')
@@ -294,6 +280,19 @@ class DockerDriverBase(ContainerInterface, Remote):
         # retry on every exception
         resp.raise_for_status()
         return resp.status_code == requests.codes.ok
+
+    def close_container(self):
+        """ Removes the running container from the connected engine via
+        :obj:`.DockerDriverBase.factory`.
+
+        Returns:
+            None
+        """
+        if not self.container:
+            self.logger.warning('no container to stop')
+            return
+        self.logger.debug('closing and removing container')
+        self.factory.stop_container(name=self.name)
 
     def f(self, flag):
         """ Helper function for checking if we included a flag.
