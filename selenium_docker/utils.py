@@ -17,7 +17,7 @@ from six import PY2
 # compatibility
 if PY2:
     _range = xrange
-else:
+else:  # pragma: no cover
     _range = range
 
 
@@ -103,7 +103,7 @@ def load_docker_image(_docker, image, tag=None, insecure_registry=False,
                  tag=tag,
                  insecure_registry=insecure_registry)
     if background:
-        gevent.spawn(fn)
+        return gevent.spawn(fn)
     else:
         return fn()
 
@@ -121,6 +121,9 @@ def parse_metadata(meta):
     valid_chars = [c for c in string.printable if c not in NO_CHR]
     pieces = []
     for k, v in meta.items():
+        if v is None:
+            continue
+        v = str(v)
         v = ''.join([c for c in v if c in valid_chars])
         if len(v) == 0:
             continue

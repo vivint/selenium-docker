@@ -1,0 +1,14 @@
+[run]
+branch = False
+concurrency = gevent
+data_file = .coverage
+omit =
+    selenium_docker/helpers.py
+
+[report]
+fail_under = 75
+precision = 0
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    if config.debug:

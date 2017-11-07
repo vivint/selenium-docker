@@ -61,6 +61,10 @@ class ContainerInterface(object):
 
     CONTAINER = None
 
+    def __str__(self):
+        return '<%s(image=%s)>' % (
+            self.__class__.__name__, self.CONTAINER.get('image', 'None'))
+
     @abstractmethod
     def _make_container(self):
         raise NotImplementedError
@@ -413,7 +417,7 @@ class ContainerFactory(object):
             None
         """
         self.logger.debug('stopping all containers')
-        for name in self.containers.keys():
+        for name in list(self.containers.keys()):
             self.stop_container(name=name)
 
     @check_engine

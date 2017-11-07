@@ -20,7 +20,10 @@ pypi:
 	python setup.py sdist upload -r $(PYPI_REPO)
 
 test:
-	tox
+	python -m \
+		pytest -x --showlocals --tb=long --junitxml=results.xml \
+		--cov-config=.coveragerc --cov=selenium_docker \
+		tests/
 
 .PHONY: \
 	all \

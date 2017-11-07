@@ -4,6 +4,7 @@
 docs/build
 scratch*.*
 results.xml
+.coverage
 
 
 # Byte-compiled / optimized / DLL files

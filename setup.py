@@ -67,6 +67,7 @@ setup(
     extras_require={
         'dev': [
             'pytest',
+            'pytest-cov',
             'sphinx',
             'sphinx-rtd-theme',
             'tox'
@@ -83,6 +84,7 @@ setup(
         'Development Status :: 4 - Beta',
         'Programming Language :: Python',
         'Programming Language :: Python :: 2.7'
+        'Programming Language :: Python :: 3.5'
         'Programming Language :: Python :: 3.6'
     ]
 )
