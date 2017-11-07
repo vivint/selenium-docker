@@ -31,7 +31,7 @@ class DriverPool(object):
     """ Create a pool of available Selenium containers for processing.
 
     Args:
-        size (int): maximum concurrent tasks.
+        size (int): maximum concurrent tasks. Must be at least ``2``.
         driver_cls (WebDriver):
         driver_cls_kw (dict):
         use_proxy (bool):
@@ -69,14 +69,14 @@ class DriverPool(object):
 
     def __init__(self, size, driver_cls=ChromeDriver, driver_cls_kw=None,
                  use_proxy=True, factory=None, name=None, logger=None):
-        self.size = size
+        self.size = max(2, size)
         self.name = name or gen_uuid(6)
         self.factory = factory or ContainerFactory.get_default_factory()
         self.logger = logger or getLogger('DriverPool.%s' % self.name)
 
         self._driver_cls = driver_cls
         self._driver_cls_kw = driver_cls_kw or {}
-        self._drivers = Queue(maxsize=size)
+        self._drivers = Queue(maxsize=self.size)
 
         # post init inspections
         if not hasattr(self._driver_cls, 'CONTAINER'):
@@ -99,6 +99,7 @@ class DriverPool(object):
         return self._processing
 
     def __bootstrap(self):
+        """ Prepare this driver pool instance to batch execute task items. """
         if self.is_processing:
             # cannot run two executions simultaneously
             raise DriverPoolRuntimeException(
@@ -109,6 +110,7 @@ class DriverPool(object):
             self._pool.kill()
             self._pool = None
         if self._use_proxy and not self.proxy:
+            # defer proxy instantiation
             self.logger.debug('bootstrapping squid proxy')
             self.proxy = SquidProxy(factory=self.factory)
         self.logger.debug('bootstrapping pool processing')
@@ -121,22 +123,33 @@ class DriverPool(object):
                 size=self.size + math.ceil(self.size * 0.25))  # headroom
 
     def __cleanup(self, force=False):
-        if self.is_processing and not force:
+        """ Stop and remove the web drivers and their containers. """
+        if self.is_processing and not force:  # pragma: no cover
             raise DriverPoolRuntimeException(
                 'cannot cleanup driver pool while executing')
+        self._processing = False
         squid = None  # type: gevent.Greenlet
+        error = None  # type: SeleniumDockerException
         if self.proxy:
             self.logger.debug('closing squid proxy')
             squid = gevent.spawn(self.proxy.quit)
         self.logger.debug('closing all driver containers')
         while not self._drivers.empty():
             d = self._drivers.get(block=True)
-            d.quit()
+            try:
+                d.quit()
+            except SeleniumDockerException as e:  # pragma: no cover
+                self.logger.exception(e, exc_info=True)
+                if not force:
+                    error = e
         if self.proxy:
             squid.join()
             self.proxy = None
+        if error:  # pragma: no cover
+            raise error
 
     def _load_drivers(self):
+        """ Load the web driver instances and containers. """
         if not self._drivers.empty():
             return
         # we need to spin up our driver instances
@@ -146,23 +159,24 @@ class DriverPool(object):
             'factory': self.factory,
         })
 
-        def make_container(kw_args):
-            d = self._driver_cls(**kw_args)
+        def make_container():
+            d = self._driver_cls(**kw)
             self._drivers.put(d)
+            self.logger.debug('available drivers %d', self._drivers.qsize())
 
         threads = []
         for o in range(self.size):
             self.logger.debug('creating driver %d of %d', o + 1, self.size)
-            threads.append(gevent.spawn(make_container, kw))
+            thread = gevent.spawn(make_container)
+            threads.append(thread)
         for t in reversed(threads):
             t.join()
         if not self._drivers.full():
-            self.__cleanup(force=True)
             raise DriverPoolRuntimeException(
                 'unable to fulfill required concurrent drivers, %d of %d' % (
                     self._drivers.qsize(), self.size))
 
-    def add_async(self, items):
+    def add_async(self, *items):
         """ Add additional items to the asynchronous processing queue.
 
         Args:
@@ -172,6 +186,8 @@ class DriverPool(object):
         Raises:
             StopIteration: when all items have been added.
         """
+        if len(items) == 1 and isinstance(items[0], list):
+            items = iter(items[0])
         if not items:
             raise DriverPoolValueError(
                 'cannot add items with value: %s' % str(items))
@@ -221,6 +237,10 @@ class DriverPool(object):
             self._drivers.put(driver)
             return ret_val
 
+        if self.__feeder_green:
+            raise DriverPoolRuntimeException(
+                'cannot perform a blocking execute while async processing')
+
         self.__bootstrap()
         self.logger.debug('starting sync processing')
 
@@ -233,10 +253,9 @@ class DriverPool(object):
         for o in ittr(worker, enumerate(items)):
             yield o
         self.logger.debug('stopping sync processing')
-        self._processing = False
         if auto_clean:
             self.logger.debug('auto cleanup pool environment')
-            self.__cleanup()
+            self.__cleanup(force=True)
 
     def execute_async(self, fn, items=None, callback=None):
         """ Execute a fixed function in the background, streaming results.
@@ -269,7 +288,7 @@ class DriverPool(object):
             return ret_val
 
         def worker_cb(task_result):
-            self.logger.debug('finished async task')
+            self.logger.debug('finished async task, %s', task_result)
             return True
 
         def feeder():
@@ -327,11 +346,12 @@ class DriverPool(object):
         self.logger.debug('there are an estimated %d results', est_size)
         if block:
             self.logger.debug('blocking for results to finish processing')
-            while (not self._tasks.empty() and not self._results.empty()) \
-                    or self.is_processing:
+            while self.is_processing:
                 while not self._results.empty():
                     yield self._results.get()
                 gevent.sleep(self.INNER_THREAD_SLEEP)
+                if self._tasks.empty() and self._results.empty():
+                    break
             raise StopIteration
         else:
             if est_size > 0:
@@ -349,25 +369,21 @@ class DriverPool(object):
             auto_clean (bool): cleanup docker containers after executing. If
                 multiple processing tasks are going to be used, it's more
                 performant to leave the containers running and reuse them.
-        Yields:
-            results: one result at a time, all that have been finished up
-                until this point.
 
-        Raises:
-            StopIteration: after all results have been yielded to the caller.
+        Returns:
+            None
         """
         self.logger.debug('stopping async processing')
-        self._processing = False
-        self.logger.debug('killing async feeder thread')
         if self.__feeder_green:
+            self.logger.debug('killing async feeder thread')
             gevent.kill(self.__feeder_green)
             self.__feeder_green = None
-        self.logger.debug('joining async pool before kill')
         if self._pool:
+            self.logger.debug('joining async pool before kill')
             self._pool.join(timeout=timeout or 1.0)
             self._pool.kill(block=True)
-        if auto_clean:
-            self.logger.debug('auto cleanup pool environment')
-            self.close()
         tasks_count = self._tasks.qsize()
         self.logger.info('%d tasks remained unprocessed', tasks_count)
+        if auto_clean:
+            self.logger.debug('auto cleanup pool environment')
+            self.__cleanup(force=True)

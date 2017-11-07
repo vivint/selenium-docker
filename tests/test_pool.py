@@ -41,12 +41,15 @@ def test_cleanup_browser(proxy, factory):
     def work(driver, item):
         assert item is True
         return item
-    pool = DriverPool(1, use_proxy=proxy, factory=factory)
+    pool = DriverPool(3, use_proxy=proxy, factory=factory)
     assert pool._use_proxy is proxy
-    results = [x for x in pool.execute(work, [True, True], auto_clean=False)]
+    results = [x for x in pool.execute(work,
+                                       [True, True],
+                                       preserve_order=proxy,
+                                       auto_clean=False)]
     if proxy:
         assert pool.proxy.factory is pool.factory
-    assert not pool.is_processing
+    assert pool.is_processing
     pool.close()
     assert pool.proxy is None
     assert not pool.is_processing
@@ -59,7 +62,7 @@ def test_cleanup_browser(proxy, factory):
 
 
 def test_async_failures(factory):
-    pool = DriverPool(2, factory=factory)
+    pool = DriverPool(2, factory=factory, use_proxy=False)
 
     with pytest.raises(DriverPoolValueError):
         pool.execute_async(True)
@@ -71,8 +74,39 @@ def test_async_failures(factory):
         pool.execute_async(lambda s: s is True, items=[True, True])
         pool.execute_async(lambda s: s is True, items=[True, True])
     pool.stop_async()
+    assert not pool.is_processing
 
     with pytest.raises(DriverPoolValueError):
-        pool.execute_async(lambda s: s is True, items=[True, True])
-        pool.add_async([])
+        pool.execute_async(lambda s: s is True)
+        pool.add_async()
+
+    with pytest.raises(DriverPoolRuntimeException):
+        pool.execute_async(lambda s: s is True)
+        pool.execute(int, [])
+
     pool.quit()
+
+
+@pytest.mark.current
+def test_async_execution(factory):
+    pool = DriverPool(1, factory=factory, use_proxy=False)
+    pool.execute_async(lambda a, b: isinstance(b, int))
+
+    pool.add_async(1, 2, 3, 4)
+    pool.add_async([1, 2, 3, 4])
+
+    assert all(list(pool.results(block=False)))
+
+    pool.add_async(1, 2, 3, 4)
+    pool.add_async([1, 2, 3, 4])
+
+    assert all(list(pool.results(block=True)))
+    assert len(list(pool.results(block=False))) == 0
+
+    pool.quit()
+
+    pool.execute_async(lambda a, b: isinstance(b, bool))
+    pool.add_async(True, False)
+    assert pool.stop_async() is None
+    pool.quit()
+
