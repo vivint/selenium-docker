@@ -417,7 +417,7 @@ class ContainerFactory(object):
             None
         """
         self.logger.debug('stopping all containers')
-        for name in self.containers.keys():
+        for name in list(self.containers.keys()):
             self.stop_container(name=name)
 
     @check_engine
