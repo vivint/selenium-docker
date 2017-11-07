@@ -169,7 +169,7 @@ class DockerDriverBase(ContainerInterface, Remote):
             # Container for SquidProxy, extract Selenium portion
             self._proxy_container = proxy
             self._proxy = proxy.selenium_proxy
-        elif proxy is not None:
+        elif proxy not in [None, False]:
             raise ValueError('invalid proxy type, %s' % type(proxy))
 
         # build our web driver capabilities
@@ -293,6 +293,7 @@ class DockerDriverBase(ContainerInterface, Remote):
             return
         self.logger.debug('closing and removing container')
         self.factory.stop_container(name=self.name)
+        self.container = None
 
     def f(self, flag):
         """ Helper function for checking if we included a flag.
