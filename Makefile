@@ -22,7 +22,7 @@ pypi:
 test:
 	python -m \
 		pytest -x --showlocals --tb=long --junitxml=results.xml \
-		--cov-report term-missing --cov=selenium_docker \
+		--cov-config=.coveragerc --cov=selenium_docker \
 		tests/
 
 .PHONY: \
