@@ -406,6 +406,7 @@ class VideoDriver(DockerDriverBase):
             self.stop_recording(self.save_path)
         super(VideoDriver, self).quit()
 
+    @check_container
     def start_recording(self, metadata=None, environment=None):
         """ Starts the ffmpeg video recording inside the container.
 
@@ -447,6 +448,7 @@ class VideoDriver(DockerDriverBase):
         self.container.exec_run(cmd, environment=environment, detach=True)
         return self.__recording_path
 
+    @check_container
     def stop_recording(self, path, shard_by_date=True, environment=None):
         """ Stops the ffmpeg video recording inside the container.
 
