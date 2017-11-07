@@ -36,6 +36,8 @@ def test_in_container_via_factory(factory):
     # type: (ContainerFactory) -> None
     output = factory.docker.containers.run(
         'standalone-chrome-ffmpeg', 'ls -la /')
+    if isinstance(output, bytes):
+        output = output.decode('ascii')
     assert '.docker' in output
 
 
