@@ -8,6 +8,7 @@ omit =
 [report]
 fail_under = 75
 precision = 0
+show_missing = True
 exclude_lines =
     pragma: no cover
     if __name__ == .__main__.:
