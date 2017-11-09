@@ -3,15 +3,25 @@
 # >>
 #     vivint-selenium-docker, 2017
 # <<
+import os
+import shutil
+from datetime import datetime
 
 import pytest
 
 from selenium_docker.pool import (
     DriverPool, DriverPoolValueError, DriverPoolRuntimeException)
-
+from selenium_docker.drivers.chrome import ChromeVideoDriver
+from selenium_docker.utils import gen_uuid
 
 class BogusDriver:
     """ No-op object class. """
+
+
+def get_title(driver, url):
+    driver.get(url)
+    assert driver.title
+    return driver.title
 
 
 def test_pool_instantiation(factory):
@@ -87,7 +97,6 @@ def test_async_failures(factory):
     pool.quit()
 
 
-@pytest.mark.current
 def test_async_execution(factory):
     pool = DriverPool(1, factory=factory, use_proxy=False)
     pool.execute_async(lambda a, b: isinstance(b, int))
@@ -110,3 +119,18 @@ def test_async_execution(factory):
     assert pool.stop_async() is None
     pool.quit()
 
+
+@pytest.mark.current
+def test_pool_with_video_driver(factory):
+    now = datetime.now()
+    urls = ['https://vivint.com', 'https://google.com']
+    folder = os.path.join('/tmp', gen_uuid(8))
+    os.makedirs(folder)
+
+    pool = DriverPool(2, ChromeVideoDriver, (folder,), use_proxy=False)
+    for title in pool.execute(get_title, urls):
+        assert title
+    path = os.path.join(*map(str, [folder, now.year, now.month, now.day]))
+    assert os.path.exists(path)
+    assert os.path.isdir(path)
+    shutil.rmtree(folder)

@@ -5,12 +5,13 @@
 # <<
 
 import math
+from collections import Mapping
 from logging import getLogger
 
 import gevent
 from gevent.pool import Pool
 from gevent.queue import JoinableQueue, Queue
-from toolz.itertoolz import count
+from toolz.itertoolz import count, isiterable
 
 from selenium_docker.base import ContainerFactory
 from selenium_docker.drivers.chrome import ChromeDriver
@@ -33,6 +34,7 @@ class DriverPool(object):
     Args:
         size (int): maximum concurrent tasks. Must be at least ``2``.
         driver_cls (WebDriver):
+        driver_cls_args (tuple):
         driver_cls_kw (dict):
         use_proxy (bool):
         factory (:obj:`~selenium_docker.base.ContainerFactory`):
@@ -67,24 +69,34 @@ class DriverPool(object):
     when tasks have completed.
     """
 
-    def __init__(self, size, driver_cls=ChromeDriver, driver_cls_kw=None,
-                 use_proxy=True, factory=None, name=None, logger=None):
+    def __init__(self, size, driver_cls=ChromeDriver, driver_cls_args=None,
+                 driver_cls_kw=None, use_proxy=True, factory=None, name=None,
+                 logger=None):
         self.size = max(2, size)
         self.name = name or gen_uuid(6)
         self.factory = factory or ContainerFactory.get_default_factory()
         self.logger = logger or getLogger('DriverPool.%s' % self.name)
 
         self._driver_cls = driver_cls
-        self._driver_cls_kw = driver_cls_kw or {}
+        self._driver_cls_args = driver_cls_args or tuple()
+        self._driver_cls_kw = driver_cls_kw or dict()
         self._drivers = Queue(maxsize=self.size)
 
         # post init inspections
         if not hasattr(self._driver_cls, 'CONTAINER'):
             raise DriverPoolValueError('driver_cls must extend DockerDriver')
 
+        if not isiterable(self._driver_cls_args):
+            raise DriverPoolValueError(
+                '%s is not iterable' % self._driver_cls_args)
+
+        if not isinstance(self._driver_cls_kw, Mapping):
+            raise DriverPoolValueError(
+                '%s is not a valid mapping' % self._driver_cls_kw)
+
         # determine proxy usage
-        self._use_proxy = use_proxy
         self.proxy = None
+        self._use_proxy = use_proxy  # type: bool
 
         # deferred instantiation
         self._pool = None  # type: Pool
@@ -153,21 +165,22 @@ class DriverPool(object):
         if not self._drivers.empty():
             return
         # we need to spin up our driver instances
+        args = self._driver_cls_args
         kw = dict(self._driver_cls_kw)
         kw.update({
             'proxy': self.proxy,
             'factory': self.factory,
         })
 
-        def make_container():
-            d = self._driver_cls(**kw)
+        def make_container(a, k):
+            d = self._driver_cls(*a, **k)
             self._drivers.put(d)
             self.logger.debug('available drivers %d', self._drivers.qsize())
 
         threads = []
         for o in range(self.size):
             self.logger.debug('creating driver %d of %d', o + 1, self.size)
-            thread = gevent.spawn(make_container)
+            thread = gevent.spawn(make_container, args, kw)
             threads.append(thread)
         for t in reversed(threads):
             t.join()
