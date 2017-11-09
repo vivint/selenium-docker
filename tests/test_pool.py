@@ -38,7 +38,7 @@ def test_pool_instantiation(factory):
 
 def test_pool_failures(factory):
     with pytest.raises(DriverPoolValueError):
-        DriverPool(2, driver_cls_args=None, use_proxy=False, factory=factory)
+        DriverPool(2, driver_cls_args=32, use_proxy=False, factory=factory)
 
     with pytest.raises(DriverPoolValueError):
         DriverPool(2, driver_cls_kw='nope', use_proxy=False, factory=factory)
@@ -121,7 +121,7 @@ def test_async_execution(factory):
     assert all(list(pool.results(block=True)))
     assert len(list(pool.results(block=False))) == 0
 
-    pool.quit()
+    pool.stop_async()
 
     pool.execute_async(lambda a, b: isinstance(b, bool))
     pool.add_async(True, False)
