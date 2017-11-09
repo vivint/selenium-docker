@@ -22,9 +22,10 @@ from six import add_metaclass
 from tenacity import retry, stop_after_delay, wait_fixed
 from toolz.functoolz import juxt
 
-from selenium_docker.base import ContainerFactory, ContainerInterface
 from selenium_docker.meta import config
 from selenium_docker.utils import ip_port, parse_metadata
+from selenium_docker.base import (
+    ContainerFactory, ContainerInterface, check_engine)
 
 
 def check_container(fn):
@@ -209,6 +210,11 @@ class DockerDriverBase(ContainerInterface, Remote):
     def name(self):
         """str: read-only property of the container's name. """
         return self._name
+
+    @property
+    def docker(self):
+        """:obj:`docker.client.DockerClient`: reference"""
+        return self.factory.docker
 
     @abstractmethod
     def _capabilities(self, arguments, extensions, proxy, user_agent):
@@ -406,7 +412,7 @@ class VideoDriver(DockerDriverBase):
             self.stop_recording(self.save_path)
         super(VideoDriver, self).quit()
 
-    @check_container
+    @check_engine
     def start_recording(self, metadata=None, environment=None):
         """ Starts the ffmpeg video recording inside the container.
 
@@ -448,7 +454,7 @@ class VideoDriver(DockerDriverBase):
         self.container.exec_run(cmd, environment=environment, detach=True)
         return self.__recording_path
 
-    @check_container
+    @check_engine
     def stop_recording(self, path, shard_by_date=True, environment=None):
         """ Stops the ffmpeg video recording inside the container.
 
