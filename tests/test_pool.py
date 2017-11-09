@@ -12,6 +12,7 @@ import pytest
 from selenium_docker.pool import (
     DriverPool, DriverPoolValueError, DriverPoolRuntimeException)
 from selenium_docker.drivers.chrome import ChromeVideoDriver
+from selenium_docker.drivers.firefox import FirefoxVideoDriver
 from selenium_docker.utils import gen_uuid
 
 class BogusDriver:
@@ -33,6 +34,14 @@ def test_pool_instantiation(factory):
     assert not pool.is_processing
     assert pool.proxy is None
     pool.quit()
+
+
+def test_pool_failures(factory):
+    with pytest.raises(DriverPoolValueError):
+        DriverPool(2, driver_cls_args=None, use_proxy=False, factory=factory)
+
+    with pytest.raises(DriverPoolValueError):
+        DriverPool(2, driver_cls_kw='nope', use_proxy=False, factory=factory)
 
 
 def test_no_proxy(factory):
@@ -120,14 +129,15 @@ def test_async_execution(factory):
     pool.quit()
 
 
-@pytest.mark.current
-def test_pool_with_video_driver(factory):
+@pytest.mark.parametrize('driver', [ChromeVideoDriver, FirefoxVideoDriver])
+def test_pool_with_video_driver(driver, factory):
     now = datetime.now()
     urls = ['https://vivint.com', 'https://google.com']
     folder = os.path.join('/tmp', gen_uuid(8))
     os.makedirs(folder)
 
-    pool = DriverPool(2, ChromeVideoDriver, (folder,), use_proxy=False)
+    pool = DriverPool(2, driver, (folder,), use_proxy=False,
+                      factory=factory)
     for title in pool.execute(get_title, urls):
         assert title
     path = os.path.join(*map(str, [folder, now.year, now.month, now.day]))
