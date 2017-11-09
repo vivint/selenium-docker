@@ -44,7 +44,7 @@ def check_engine(fn):
         self.logger.debug('pinging docker engine')
         try:
             self.docker.ping()
-        except SeleniumDockerException as e:
+        except SeleniumDockerException as e:  # pragma: no cover
             self.logger.exception(e, exc_info=True)
             raise e
         else:
@@ -177,7 +177,7 @@ class ContainerFactory(object):
         """
         self.logger.debug('bootstrapping container instance to factory')
         c = container
-        for k, v in kwargs.items():
+        for k, v in kwargs.items():  # pragma: no cover
             setattr(c, k, v)
         c.started = time.time()
         c.logger = logging.getLogger('%s.%s' % (__name__, kwargs.get('name')))
@@ -244,7 +244,7 @@ class ContainerFactory(object):
         return cls.DEFAULT
 
     @check_engine
-    def get_namespace_containers(self, namespace):
+    def get_namespace_containers(self, namespace=None):
         """ Glean the running containers from the environment that are
         using our factory's namespace.
 
@@ -257,6 +257,8 @@ class ContainerFactory(object):
                 :obj:`~docker.models.containers.Container` instances
                 mapped by name.
         """
+        if namespace is None:
+            namespace = self.namespace
         ret = {}
         for c in self.docker.containers.list():
             if namespace in c.name:
@@ -394,7 +396,7 @@ class ContainerFactory(object):
 
         try:
             container = self.docker.containers.run(**kw)
-        except DockerException as e:
+        except DockerException as e:  # pragma: no cover
             self.logger.exception(e, exc_info=True)
             raise e
 
