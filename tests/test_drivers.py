@@ -44,6 +44,7 @@ def test_driver(cls, ua, factory):
 
     for flag in [flags.ALL, flags.DISABLED]:
         driver = cls(user_agent=ua, flags=flag, factory=factory)
+        print(driver)
         assert isinstance(driver, DockerDriverBase)
         driver.get('https://vivint.com')
         assert driver.title
