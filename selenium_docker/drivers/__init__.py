@@ -27,6 +27,12 @@ from selenium_docker.utils import ip_port, parse_metadata
 from selenium_docker.base import (
     ContainerFactory, ContainerInterface, check_engine)
 
+__all__ = [
+    'DockerDriverBase',
+    'VideoDriver',
+    'check_container'
+]
+
 
 def check_container(fn):
     """ Ensure we're not trying to double up an external container
@@ -190,6 +196,7 @@ class DockerDriverBase(ContainerInterface, Remote):
 
         # driver configuration
         self.implicitly_wait(self.IMPLICIT_WAIT_SECONDS)
+        self._final(args, extensions, self._proxy, user_agent)
 
     def __repr__(self):
         if not hasattr(self, 'session_id'):
@@ -224,6 +231,10 @@ class DockerDriverBase(ContainerInterface, Remote):
     def _profile(self, arguments, extensions, proxy, user_agent):
         raise NotImplementedError
 
+    @abstractmethod
+    def _final(self, arguments, extensions, proxy, user_agent):
+        raise NotImplementedError
+
     @check_container
     def _make_container(self, **kwargs):
         """ Create a running container on the given Docker engine.
@@ -238,9 +249,6 @@ class DockerDriverBase(ContainerInterface, Remote):
             :class:`~docker.models.containers.Container`
         """
         # ensure we don't already have a container created for this instance
-        if hasattr(self, 'container') and self.container:
-            self.logger.debug('container already running, returning')
-            return self.container
         self.logger.debug('creating container')
         return self.factory.start_container(self.CONTAINER, **kwargs)
 
@@ -380,7 +388,7 @@ class VideoDriver(DockerDriverBase):
     
     """
 
-    def __init__(self, path, *args, **kwargs):
+    def __init__(self, path='/tmp', *args, **kwargs):
         super(VideoDriver, self).__init__(*args, **kwargs)
         # marker attributes
         if not os.path.isdir(path):

@@ -10,6 +10,12 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium_docker.drivers import DockerDriverBase, VideoDriver
 from selenium_docker.helpers import JsonFlags
 
+__all__ = [
+    'Flags',
+    'ChromeDriver',
+    'ChromeVideoDriver'
+]
+
 
 class Flags(JsonFlags):
     DISABLED    = 0
@@ -92,6 +98,21 @@ class ChromeDriver(DockerDriverBase):
     def _profile(self, arguments, extensions, proxy, user_agent):
         """ No-op for ChromeDriver. """
         self.logger.debug('building browser profile')
+        return None
+
+    def _final(self, arguments, extensions, proxy, user_agent):
+        """ Configuration applied after the driver has been created.
+
+        Args:
+            arguments (list): unused.
+            extensions (list): unused.
+            proxy (Proxy): adds proxy instance to DesiredCapabilities.
+            user_agent (str): unused.
+
+        Returns:
+            None
+        """
+        self.logger.debug('applying final configuration')
         return None
 
 

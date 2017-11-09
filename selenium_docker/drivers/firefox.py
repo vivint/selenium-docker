@@ -10,6 +10,12 @@ from selenium.webdriver import DesiredCapabilities, FirefoxProfile
 from selenium_docker.drivers import DockerDriverBase, VideoDriver
 from selenium_docker.helpers import JsonFlags
 
+__all__ = [
+    'Flags',
+    'FirefoxDriver',
+    'FirefoxVideoDriver'
+]
+
 
 class Flags(JsonFlags):
     DISABLED    = 0
@@ -92,6 +98,21 @@ class FirefoxDriver(DockerDriverBase):
         if user_agent:
             profile.set_preference('general.useragent.override', user_agent)
         return profile
+
+    def _final(self, arguments, extensions, proxy, user_agent):
+        """ Configuration applied after the driver has been created.
+
+        Args:
+            arguments (list): unused.
+            extensions (list): unused.
+            proxy (Proxy): adds proxy instance to DesiredCapabilities.
+            user_agent (str): unused.
+
+        Returns:
+            None
+        """
+        self.logger.debug('applying final configuration')
+        return None
 
 
 class FirefoxVideoDriver(VideoDriver, FirefoxDriver):
