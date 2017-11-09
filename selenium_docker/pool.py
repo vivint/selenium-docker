@@ -162,7 +162,7 @@ class DriverPool(object):
 
     def _load_drivers(self):
         """ Load the web driver instances and containers. """
-        if not self._drivers.empty():
+        if not self._drivers.empty():  # pragma: no cover
             return
         # we need to spin up our driver instances
         args = self._driver_cls_args
