@@ -106,6 +106,13 @@ def test_async_failures(factory):
     pool.quit()
 
 
+def test_async_to_sync_failure(factory):
+    pool = DriverPool(2, factory=factory, use_proxy=False)
+    pool.execute_async(lambda a, b: b is True, [True])
+    with pytest.raises(DriverPoolRuntimeException):
+        pool.execute(lambda a, b: b is False, [False])
+
+
 def test_async_execution(factory):
     pool = DriverPool(1, factory=factory, use_proxy=False)
     pool.execute_async(lambda a, b: isinstance(b, int))
@@ -113,6 +120,8 @@ def test_async_execution(factory):
     pool.add_async(1, 2, 3, 4)
     pool.add_async([1, 2, 3, 4])
 
+    assert pool.is_async
+    assert pool.is_processing
     assert all(list(pool.results(block=False)))
 
     pool.add_async(1, 2, 3, 4)
@@ -144,3 +153,47 @@ def test_pool_with_video_driver(driver, factory):
     assert os.path.exists(path)
     assert os.path.isdir(path)
     shutil.rmtree(folder)
+
+
+def test_pool_iter(factory):
+    pool = DriverPool(2, factory=factory, use_proxy=False)
+
+    def is_true(driver, item):
+        return bool(item)
+
+    assert all(list(pool.execute(is_true, [True, 1])))
+
+    pool.execute(is_true, [True, 1])
+    assert all(list(pool))
+
+
+def test_pool_iter_async(factory):
+    pool = DriverPool(2, factory=factory, use_proxy=False)
+
+    def is_true(driver, item):
+        return bool(item)
+
+    def assert_true(value):
+        assert value
+
+    def assert_false(value):
+        assert not value
+
+    pool.execute_async(is_true, [True, 1], assert_true)
+
+    assert pool.is_async
+    assert 'async=True' in str(pool)
+    assert all(list(pool))
+
+    pool.stop_async()
+
+    pool.execute_async(is_true, [False, 0, None], assert_false)
+    assert all(list(pool.results(block=True)))
+
+
+def test_pool_repr(factory):
+    pool = DriverPool(2, factory=factory, use_proxy=False)
+    s = str(pool)
+    assert 'DriverPool' in s
+    assert 'size=2' in s
+    assert 'async=False' in s
