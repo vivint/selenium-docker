@@ -5,7 +5,7 @@
 # <<
 
 __author__ = 'Blake VandeMerwe'
-__version__ = '0.4.1'
+__version__ = '0.4.2'
 __license__ = 'MIT'
 __contact__ = 'blake.vandemerwe@vivint.com'
 __url__ = 'https://source.vivint.com/projects/DEVOPS/repos/vivint-selenium-docker'
