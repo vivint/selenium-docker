@@ -4,8 +4,6 @@
 docs/build
 scratch*.*
 results.xml
-.coverage
-
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -47,8 +45,6 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 htmlcov/
 .tox/
-.coverage
-.coverage.*
 .cache
 nosetests.xml
 coverage.xml
