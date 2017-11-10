@@ -69,6 +69,11 @@ class DriverPool(object):
     when tasks have completed.
     """
 
+    PROXY_CLS = SquidProxy
+    """:obj:`~selenium_docker.proxy.AbstractProxy`: created for the pool
+    when ``use_proxy=True`` during pool instantiation.
+    """
+
     def __init__(self, size, driver_cls=ChromeDriver, driver_cls_args=None,
                  driver_cls_kw=None, use_proxy=True, factory=None, name=None,
                  logger=None):
@@ -105,10 +110,30 @@ class DriverPool(object):
         self._processing = False  # type: bool
         self.__feeder_green = None  # type: gevent.Greenlet
 
+    def __repr__(self):
+        return '<DriverPool-%s(size=%d,driver=%s,proxy=%s,async=%s)>' % (
+            self.name, self.size, self._driver_cls.BROWSER,
+            self._use_proxy, self.is_async)
+
+    def __iter__(self):
+        return self.results(block=self.is_async)
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception as e:
+            if hasattr(self, 'logger'):
+                self.logger.exection(e, exc_info=False)
+
     @property
     def is_processing(self):
         """bool: whether or not we're currently processing tasks. """
         return self._processing
+
+    @property
+    def is_async(self):
+        """bool: returns True when asynchronous processing is happening. """
+        return self.__feeder_green is not None
 
     def __bootstrap(self):
         """ Prepare this driver pool instance to batch execute task items. """
@@ -116,26 +141,46 @@ class DriverPool(object):
             # cannot run two executions simultaneously
             raise DriverPoolRuntimeException(
                 'cannot bootstrap pool, already running')
+        if self._results and self._results.qsize():  # pragma: no cover
+            self.logger.debug('pending results being discarded')
+        if self._tasks and self._tasks.qsize():  # pragma: no cover
+            self.logger.debug('pending tasks being discarded')
         if self._pool:  # pragma: no cover
             self.logger.debug('killing processing pool')
             self._pool.join(timeout=10.0)
             self._pool.kill()
             self._pool = None
         if self._use_proxy and not self.proxy:
-            # defer proxy instantiation
+            # defer proxy instantiation -- since spinning up a squid proxy
+            #  docker container is surprisingly time consuming.
             self.logger.debug('bootstrapping squid proxy')
-            self.proxy = SquidProxy(factory=self.factory)
+            self.proxy = self.PROXY_CLS(factory=self.factory)
         self.logger.debug('bootstrapping pool processing')
         self._processing = True
         self._results = Queue()
         self._tasks = JoinableQueue()
         self._load_drivers()
-        if not self._pool:
-            self._pool = Pool(
-                size=self.size + math.ceil(self.size * 0.25))  # headroom
+        # create our processing pool with headroom over the number of drivers
+        #  requested for this processing pool.
+        self._pool = Pool(size=self.size + math.ceil(self.size * 0.25))
 
     def __cleanup(self, force=False):
-        """ Stop and remove the web drivers and their containers. """
+        """ Stop and remove the web drivers and their containers. This function
+        should not remove pending tasks or results. It should be possible to
+        cleanup all the external resources of a driver pool and still extract
+        the results of the work that was completed.
+
+        Raises:
+            DriverPoolRuntimeException: when attempting to cleanup an
+                environment while processing is still happening, and forcing
+                the cleanup is set to ``False``.
+
+            SeleniumDockerException: when a driver instance or container
+                cannot be closed properly.
+
+        Returns:
+            None
+        """
         if self.is_processing and not force:  # pragma: no cover
             raise DriverPoolRuntimeException(
                 'cannot cleanup driver pool while executing')
@@ -161,7 +206,15 @@ class DriverPool(object):
             raise error
 
     def _load_drivers(self):
-        """ Load the web driver instances and containers. """
+        """ Load the web driver instances and containers.
+
+        Raises:
+            DriverPoolRuntimeException: when the requested number of drivers
+                for the given pool size cannot be created for some reason.
+
+        Returns:
+            None
+        """
         if not self._drivers.empty():  # pragma: no cover
             return
         # we need to spin up our driver instances
@@ -264,11 +317,13 @@ class DriverPool(object):
 
         self.logger.debug('yielding processed results')
         for o in ittr(worker, enumerate(items)):
-            yield o
+            self._results.put(o)
+        self._results.put(StopIteration)
         self.logger.debug('stopping sync processing')
         if auto_clean:
             self.logger.debug('auto cleanup pool environment')
             self.__cleanup(force=True)
+        return self.results(block=False)
 
     def execute_async(self, fn, items=None, callback=None):
         """ Execute a fixed function in the background, streaming results.
