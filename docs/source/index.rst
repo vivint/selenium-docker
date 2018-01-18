@@ -8,7 +8,10 @@ and enabling advanced features such as screen recording and automatic proxy
 caching.
 
 
-MIT licensed source code is available at LICENSE.
+Apache 2.0 licensed source code is available in the ``LICENSE`` file.
+
+
+Code is hosted on Github, `vivint/selenium-docker <https://github.com/vivint/selenium-docker>`_.
 
 
 Contents

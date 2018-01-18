@@ -1,5 +1,9 @@
 # vivint-selenium-docker
 
+[![pypi](https://img.shields.io/pypi/v/selenium-docker.svg)]()
+[![Read the Docs](https://img.shields.io/readthedocs/selenium-docker.svg)](https://selenium-docker.readthedocs.io/en/latest/)
+[![License ALv2](https://img.shields.io/github/license/vivint/selenium-docker.svg)](https://github.com/vivint/selenium-docker/blob/master/LICENSE)
+
 Extending Selenium with drop in replacements for Chrome and Firefox webdrivers
 that run in Docker containers. Additional goodies like automatic proxies, live
 video recording and driver-pools are included!

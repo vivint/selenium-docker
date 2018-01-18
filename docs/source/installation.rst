@@ -37,4 +37,5 @@ Terminal::
     docker pull vivint/selenium-chrome-ffmpeg
     docker pull vivint/selenium-firefox-ffmpeg
 
-Links to the Dockerfiles can be found `here <URL>`__.
+Links to the Dockerfiles can be found on
+`Github <https://github.com/vivint/selenium-docker/tree/master/dockerfiles>`__.
