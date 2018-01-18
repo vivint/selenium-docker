@@ -15,6 +15,7 @@ from selenium_docker.drivers.chrome import ChromeVideoDriver
 from selenium_docker.drivers.firefox import FirefoxVideoDriver
 from selenium_docker.utils import gen_uuid
 
+
 class BogusDriver:
     """ No-op object class. """
 
