@@ -187,8 +187,8 @@ def test_pool_iter_async(factory):
 
     pool.stop_async()
 
-    pool.execute_async(is_true, [False, 0, None], assert_false)
-    assert all(list(pool.results(block=True)))
+    pool.execute_async(is_true, [False, 0, None], callback=assert_false)
+    assert not any(list(pool.results(block=True)))
 
 
 def test_pool_repr(factory):

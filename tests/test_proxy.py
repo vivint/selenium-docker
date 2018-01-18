@@ -25,6 +25,5 @@ def test_proxy_container(factory):
     assert proxy
     assert proxy.container
     assert 'squid3' in proxy.name
-    assert 'unittest' in proxy.container.name
     assert 'running' == proxy.container.status
     proxy.quit()
