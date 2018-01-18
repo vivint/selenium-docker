@@ -1,6 +1,8 @@
 # vivint-selenium-docker
 
-Extending Selenium with drop in replacements for Chrome and Firefox webdriver classes that will run inside a Docker container instead of in the user's desktop environment.
+Extending Selenium with drop in replacements for Chrome and Firefox webdrivers
+that run in Docker containers. Additional goodies like automatic proxies, live
+video recording and driver-pools are included!
 
 ## Getting Started
 
@@ -15,7 +17,7 @@ Extending Selenium with drop in replacements for Chrome and Firefox webdriver cl
     Development version from source,
     
     ```bash
-    $ pip install git+ssh://git@source.vivint.com:7999/devops/vivint-selenium-docker.git@master
+    $ pip install git+ssh://git@github.com:vivint/selenium-council.git
     ```
 
 2. Download [docker](https://www.docker.com/get-docker) for your operating system and ensure it's running.
@@ -73,7 +75,7 @@ driver = ChromeDriver()
 
 driver.get('https://google.com')
 
-print driver.title
+print(driver.title)
 
 driver.quit()
 ```
@@ -117,7 +119,7 @@ def get_title(driver, url):
     return driver.title
 
 def print_fn(s):
-    print s
+    print(s)
 
 urls = [
     'https://google.com',
@@ -149,8 +151,4 @@ for x in pool.results():
 
 Copyright 2017 - Vivint, inc.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+Apache V2 -- See `LICENSE` for full statement.
