@@ -5,6 +5,7 @@
 # <<
 
 from aenum import auto
+from docker.types import Mount
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 
 from selenium_docker.drivers import DockerDriverBase, VideoDriver
@@ -39,7 +40,8 @@ class ChromeDriver(DockerDriverBase):
                 'dynamic': 'true',
                 'browser': 'chrome',
                 'hub': 'false'},
-        mem_limit='480mb',
+        mem_limit='512mb',
+        volumes=['/dev/shm:/dev/shm'],
         ports={DockerDriverBase.SELENIUM_PORT: None},
         publish_all_ports=True)
     DEFAULT_ARGUMENTS = [
@@ -128,6 +130,7 @@ class ChromeVideoDriver(VideoDriver, ChromeDriver):
                 'dynamic': 'true',
                 'browser': 'chrome',
                 'hub': 'false'},
-        mem_limit='700mb',
+        mem_limit='768mb',
+        volumes=['/dev/shm:/dev/shm'],
         ports={DockerDriverBase.SELENIUM_PORT: None},
         publish_all_ports=True)

@@ -50,7 +50,6 @@ def check_engine(fn):
         else:
             self.logger.debug('pass')
             return fn(self, *args, **kwargs)
-
     return inner
 
 

@@ -7,11 +7,13 @@
 import math
 from collections import Mapping
 from logging import getLogger
+from functools import partial
 
 import gevent
 from gevent.pool import Pool
 from gevent.queue import JoinableQueue, Queue
 from toolz.itertoolz import count, isiterable
+from selenium.common.exceptions import WebDriverException
 
 from selenium_docker.base import ContainerFactory
 from selenium_docker.drivers.chrome import ChromeDriver
@@ -80,7 +82,8 @@ class DriverPool(object):
         self.size = max(2, size)
         self.name = name or gen_uuid(6)
         self.factory = factory or ContainerFactory.get_default_factory()
-        self.logger = logger or getLogger('DriverPool.%s' % self.name)
+        self.logger = logger or getLogger(
+            '%s.DriverPool.%s' % (__name__, self.name))
 
         self._driver_cls = driver_cls
         self._driver_cls_args = driver_cls_args or tuple()
@@ -190,6 +193,13 @@ class DriverPool(object):
         if self.proxy:
             self.logger.debug('closing squid proxy')
             squid = gevent.spawn(self.proxy.quit)
+        if self._pool:  # pragma: no cover
+            self.logger.debug('emptying task pool')
+            if not force:
+                self._pool.join(timeout=10.0)
+            self._pool.kill(block=False,
+                            timeout=10.0)
+            self._pool = None
         self.logger.debug('closing all driver containers')
         while not self._drivers.empty():
             d = self._drivers.get(block=True)
@@ -205,6 +215,19 @@ class DriverPool(object):
         if error:  # pragma: no cover
             raise error
 
+    def _load_driver(self, and_add=True):
+        """ Load a single web driver instance and container. """
+        args = self._driver_cls_args
+        kw = dict(self._driver_cls_kw)
+        kw.update({
+            'proxy': self.proxy,
+            'factory': self.factory,
+        })
+        driver = self._driver_cls(*args, **kw)
+        if and_add:
+            self._drivers.put(driver)
+        return driver
+
     def _load_drivers(self):
         """ Load the web driver instances and containers.
 
@@ -217,23 +240,10 @@ class DriverPool(object):
         """
         if not self._drivers.empty():  # pragma: no cover
             return
-        # we need to spin up our driver instances
-        args = self._driver_cls_args
-        kw = dict(self._driver_cls_kw)
-        kw.update({
-            'proxy': self.proxy,
-            'factory': self.factory,
-        })
-
-        def make_container(a, k):
-            d = self._driver_cls(*a, **k)
-            self._drivers.put(d)
-            self.logger.debug('available drivers %d', self._drivers.qsize())
-
         threads = []
         for o in range(self.size):
             self.logger.debug('creating driver %d of %d', o + 1, self.size)
-            thread = gevent.spawn(make_container, args, kw)
+            thread = gevent.spawn(self._load_driver)
             threads.append(thread)
         for t in reversed(threads):
             t.join()
@@ -241,6 +251,20 @@ class DriverPool(object):
             raise DriverPoolRuntimeException(
                 'unable to fulfill required concurrent drivers, %d of %d' % (
                     self._drivers.qsize(), self.size))
+
+    def _recycle_driver(self, driver):
+        if not driver:
+            return
+        try:
+            driver.quit()
+        except Exception as e:
+            self.logger.exception(e, exc_info=True)
+        # do NOT add the new driver container to the drivers queue,
+        #  instead this will be handled in the recycle logic that requested
+        #  the driver in the first place. Instead of returning the one it
+        #  received this "new" instance will be put in its placed.
+        print('RECYCLED!!!!!!')
+        return self._load_driver(and_add=False)
 
     def add_async(self, *items):
         """ Add additional items to the asynchronous processing queue.
@@ -325,7 +349,8 @@ class DriverPool(object):
             self.__cleanup(force=True)
         return self.results(block=False)
 
-    def execute_async(self, fn, items=None, callback=None):
+    def execute_async(self, fn, items=None, callback=None,
+                      catch=(WebDriverException,), requeue_task=False):
         """ Execute a fixed function in the background, streaming results.
 
         Args:
@@ -336,6 +361,13 @@ class DriverPool(object):
             callback (Callable): function that takes a single parameter, the
                 return value of ``fn`` when its finished processing and has
                 returned the driver to the queue.
+            catch (tuple[Exception]): tuple of Exception classes to catch
+                during task execution. If one of these Exception classes
+                is caught during ``fn`` execution the driver that crashed will
+                attempt to be recycled.
+            requeue_task (bool): in the event of an Exception being caught
+                should the task/item that was being worked on be re-added to
+                the queue of items being processed.
 
         Raises:
             DriverPoolValueError: if ``callback`` is not ``None``
@@ -346,32 +378,54 @@ class DriverPool(object):
         """
 
         def worker(fn, task):
+            ret_val = None
             async_task_id = gen_uuid(12)
             self.logger.debug('starting async task %s', async_task_id)
             driver = self._drivers.get(block=True)
-            ret_val = fn(driver, task)
-            self._results.put(ret_val)
-            self._drivers.put(driver)
-            gevent.sleep(self.INNER_THREAD_SLEEP)
-            return ret_val
-
-        def worker_cb(task_result):
-            self.logger.debug('finished async task, %s', task_result)
-            return True
+            if isinstance(driver, Exception):
+                raise driver
+            try:
+                ret_val = fn(driver, task)
+            except catch as e:
+                self.logger.exception('hihi')
+                if self.is_processing:
+                    driver = self._recycle_driver(driver)
+                    if requeue_task:
+                        self._tasks.put(task)
+            finally:
+                self._results.put(ret_val)
+                self._drivers.put(driver)
+                gevent.sleep(self.INNER_THREAD_SLEEP)
+                return ret_val
 
         def feeder():
             self.logger.debug('starting async feeder thread')
             while True:
                 while not self._tasks.empty():
                     task = self._tasks.get()
+                    if self._pool is None:
+                        break
                     self._pool.apply_async(
                         worker,
                         args=(fn, task,),
-                        callback=callback)
+                        callback=greenlet_callback)
                 gevent.sleep(self.INNER_THREAD_SLEEP)
+                if self._pool is None and not self.is_processing:
+                    break
+            return
 
         if callback is None:
-            callback = worker_cb
+            def logger(value):
+                self.logger.debug('%s', value)
+            callback = logger
+
+        def real_callback(cb, value):
+            if isinstance(value, gevent.GreenletExit):
+                raise value
+            else:
+                cb(value)
+
+        greenlet_callback = partial(real_callback, callback)
 
         for f in [fn, callback]:
             if not callable(f):
@@ -383,7 +437,7 @@ class DriverPool(object):
         if not self.__feeder_green:
             self.__feeder_green = gevent.spawn(feeder)
         if items:
-            self.add_async(items)
+            self.add_async(*items)
 
     def quit(self):
         """ Alias for :func:`~DriverPool.close()`. Included for consistency
@@ -393,6 +447,8 @@ class DriverPool(object):
         Returns:
             None
         """
+        if self.__feeder_green:
+            return self.stop_async()
         return self.close()
 
     def results(self, block=True):
@@ -449,7 +505,7 @@ class DriverPool(object):
         if self._pool:
             self.logger.debug('joining async pool before kill')
             self._pool.join(timeout=timeout or 1.0)
-            self._pool.kill(block=True)
+            self._pool.kill(block=False)
         tasks_count = self._tasks.qsize()
         self.logger.info('%d tasks remained unprocessed', tasks_count)
         if auto_clean:

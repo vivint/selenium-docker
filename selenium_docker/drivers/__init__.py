@@ -409,6 +409,9 @@ class VideoDriver(DockerDriverBase):
         """
         return ('%s-docker-%s.mkv' % (self.BROWSER, self._time)).lower()
 
+    def __reset_time(self):
+        self._time = int(time.time() * 100)
+
     def quit(self):
         """ Stop video recording before closing the driver instance and
         removing the Docker container.
@@ -523,4 +526,5 @@ class VideoDriver(DockerDriverBase):
         tar.extractall(path)
         os.unlink(tar_dest)
         self.__is_recording = False
+        self._time = int(time.time())
         return destination

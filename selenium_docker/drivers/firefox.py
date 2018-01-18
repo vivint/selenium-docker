@@ -38,7 +38,8 @@ class FirefoxDriver(DockerDriverBase):
                 'dynamic': 'true',
                 'browser': 'firefox',
                 'hub': 'false'},
-        mem_limit='480mb',
+        mem_limit='512mb',
+        volumes=['/dev/shm:/dev/shm'],
         ports={DockerDriverBase.SELENIUM_PORT: None},
         publish_all_ports=True)
     DEFAULT_ARGUMENTS = [
@@ -127,6 +128,7 @@ class FirefoxVideoDriver(VideoDriver, FirefoxDriver):
                 'dynamic': 'true',
                 'browser': 'firefox',
                 'hub': 'false'},
-        mem_limit='700mb',
+        mem_limit='768mb',
+        volumes=['/dev/shm:/dev/shm'],
         ports={DockerDriverBase.SELENIUM_PORT: None},
         publish_all_ports=True)
